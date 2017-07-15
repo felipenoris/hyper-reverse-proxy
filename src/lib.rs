@@ -44,7 +44,7 @@ fn is_hop_header(name: &str) -> bool {
 fn remove_hop_headers(headers: &Headers) -> Headers {
     headers
         .iter()
-        .filter(|header| is_hop_header(header.name()))
+        .filter(|header| !is_hop_header(header.name()))
         .collect()
 }
 
