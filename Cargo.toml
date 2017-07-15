@@ -1,6 +1,6 @@
 [package]
 name = "hyper-reverse-proxy"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Brendan Zabarauskas <bjzaba@yahoo.com.au>"]
 license = "Apache-2.0"
 description = "A simple reverse proxy, to be used with Hyper and Tokio."
@@ -24,4 +24,6 @@ lazy_static = "0.2"
 unicase = "2.0.0"
 
 [dev-dependencies]
+error-chain = "0.10.0"
 tokio-core = "0.1.8"
+tokio-signal = "0.1.2"
