@@ -1,4 +1,55 @@
 //! A simple reverse proxy, to be used with Hyper and Tokio.
+//!
+//! The implementation ensures that [Hop-by-hop headers] are stripped correctly in both directions,
+//! and adds the client's IP address to a comma-space-separated list of forwarding addresses in the
+//! `X-Forwarded-For` header.
+//!
+//! The implementation is based on Go's [`httputil.ReverseProxy`].
+//!
+//! [Hop-by-hop headers]: http://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html
+//! [`httputil.ReverseProxy`]: https://golang.org/pkg/net/http/httputil/#ReverseProxy
+//!
+//! ```rust,no_run
+//! extern crate futures;
+//! extern crate hyper;
+//! extern crate hyper_reverse_proxy;
+//! extern crate tokio_core;
+//!
+//! fn run() -> hyper::Result<()> {
+//!     use futures::Stream;
+//!     use hyper::Client;
+//!     use hyper::server::Http;
+//!     use hyper_reverse_proxy::ReverseProxy;
+//!     use tokio_core::net::TcpListener;
+//!     use tokio_core::reactor::Core;
+//!     use std::net::{SocketAddr, Ipv4Addr};
+//!
+//!     let mut core = Core::new()?;
+//!     let handle = core.handle();
+//!     let listen_addr = SocketAddr::new(Ipv4Addr::new(127, 0, 0, 1).into(), 8080);
+//!     let listener = TcpListener::bind(&listen_addr, &handle)?;
+//!
+//!     let http = Http::new();
+//!     let server = listener.incoming().for_each(|(socket, addr)| {
+//!         let service = ReverseProxy::new(Client::new(&handle), Some(addr.ip()));
+//!         http.bind_connection(&handle, socket, addr, service);
+//!         Ok(())
+//!     });
+//!
+//!     core.run(server)?;
+//!
+//!     Ok(())
+//! }
+//!
+//! fn main() {
+//!     use std::io::Write;
+//!
+//!     if let Err(error) = run() {
+//!         write!(&mut std::io::stderr(), "{}", error).expect("Error writing to stderr");
+//!         std::process::exit(1);
+//!     }
+//! }
+//! ```
 
 extern crate futures;
 #[macro_use]
@@ -6,14 +57,12 @@ extern crate hyper;
 #[macro_use]
 extern crate lazy_static;
 extern crate unicase;
-extern crate void;
 
 use futures::future::Future;
 use hyper::{Body, Headers, Request, Response, StatusCode};
 use hyper::server::Service;
 use std::marker::PhantomData;
 use std::net::IpAddr;
-use void::Void;
 
 fn is_hop_header(name: &str) -> bool {
     use unicase::Ascii;
@@ -99,15 +148,6 @@ fn create_proxied_response<B>(mut response: Response<B>) -> Response<B> {
 
 /// A `Service` that takes an incoming request, sends it to a given `Client`, then proxies back
 /// the response.
-///
-/// The implementation ensures that [Hop-by-hop headers] are stripped correctly in both directions,
-/// and adds the client's IP address to a comma-space-separated list of forwarding addresses in the
-/// `X-Forwarded-For` header.
-///
-/// The implementation is based on Go's [`httputil.ReverseProxy`].
-///
-/// [Hop-by-hop headers]: http://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html
-/// [`httputil.ReverseProxy`]: https://golang.org/pkg/net/http/httputil/#ReverseProxy
 pub struct ReverseProxy<C: Service, B = Body> {
     client: C,
     remote_ip: Option<IpAddr>,
@@ -133,7 +173,7 @@ impl<C: Service, B> ReverseProxy<C, B> {
             // could use an entry API like `std::collections::HashMap`?
             if request.headers().has::<XForwardedFor>() {
                 if let Some(prior) = request.headers_mut().get_mut::<XForwardedFor>() {
-                    prior.0.push(ip);
+                    prior.push(ip);
                 }
             } else {
                 let header = XForwardedFor(vec![ip]);
@@ -154,8 +194,8 @@ where
 {
     type Request = Request<B>;
     type Response = Response<B>;
-    type Error = Void;
-    type Future = Box<Future<Item = Response<B>, Error = Void>>;
+    type Error = hyper::Error;
+    type Future = Box<Future<Item = Response<B>, Error = hyper::Error>>;
 
     fn call(&self, request: Self::Request) -> Self::Future {
         let proxied_request = self.create_proxied_request(request);
