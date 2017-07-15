@@ -9,9 +9,8 @@ extern crate unicase;
 extern crate void;
 
 use futures::future::Future;
-use hyper::{Body, Request, Response, StatusCode};
+use hyper::{Body, Headers, Request, Response, StatusCode};
 use hyper::server::Service;
-use hyper::header::Headers;
 use std::marker::PhantomData;
 use std::net::IpAddr;
 use void::Void;
@@ -61,6 +60,24 @@ header! {
     /// * `203.0.113.195`
     /// * `203.0.113.195, 70.41.3.18, 150.172.238.178`
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// # extern crate hyper;
+    /// # extern crate hyper_reverse_proxy;
+    /// use hyper::Headers;
+    /// use hyper_reverse_proxy::XForwardedFor;
+    /// use std::net::{Ipv4Addr, Ipv6Addr};
+    ///
+    /// # fn main() {
+    /// let mut headers = Headers::new();
+    /// headers.set(XForwardedFor(vec![
+    ///     Ipv4Addr::new(127, 0, 0, 1).into(),
+    ///     Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1).into(),
+    /// ]));
+    /// # }
+    /// ```
+    ///
     /// # References
     ///
     /// - [MDN](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Forwarded-For)
@@ -93,16 +110,16 @@ fn create_proxied_response<B>(mut response: Response<B>) -> Response<B> {
 /// [`httputil.ReverseProxy`]: https://golang.org/pkg/net/http/httputil/#ReverseProxy
 pub struct ReverseProxy<C: Service, B = Body> {
     client: C,
-    remote_ip_addr: Option<IpAddr>,
+    remote_ip: Option<IpAddr>,
     _pantom_data: PhantomData<B>,
 }
 
 impl<C: Service, B> ReverseProxy<C, B> {
     /// Construct a reverse proxy that dispatches to the given client.
-    pub fn new(client: C, remote_ip_addr: Option<IpAddr>) -> ReverseProxy<C, B> {
+    pub fn new(client: C, remote_ip: Option<IpAddr>) -> ReverseProxy<C, B> {
         ReverseProxy {
             client,
-            remote_ip_addr,
+            remote_ip,
             _pantom_data: PhantomData,
         }
     }
@@ -111,15 +128,15 @@ impl<C: Service, B> ReverseProxy<C, B> {
         *request.headers_mut() = remove_hop_headers(request.headers());
 
         // Add forwarding information in the headers
-        if let Some(ip_addr) = self.remote_ip_addr {
+        if let Some(ip) = self.remote_ip {
             // This is kind of ugly because of borrowing. Maybe hyper's `Headers` object
             // could use an entry API like `std::collections::HashMap`?
             if request.headers().has::<XForwardedFor>() {
                 if let Some(prior) = request.headers_mut().get_mut::<XForwardedFor>() {
-                    prior.0.push(ip_addr);
+                    prior.0.push(ip);
                 }
             } else {
-                let header = XForwardedFor(vec![ip_addr]);
+                let header = XForwardedFor(vec![ip]);
                 request.headers_mut().set(header);
             }
         }

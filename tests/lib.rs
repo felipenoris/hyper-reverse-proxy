@@ -22,10 +22,57 @@ impl<F: Fn(Request) -> Response> Service for MockService<F> {
 }
 
 #[test]
-#[ignore]
-fn adds_forwarded_for_header() {
-    // TODO: https://github.com/hyperium/hyper/issues/1258
-    unimplemented!()
+fn begins_forwarded_for_header() {
+    use hyper_reverse_proxy::XForwardedFor;
+    use std::net::Ipv6Addr;
+
+    let mut request = Request::new(Get, "/".parse().unwrap());
+    request.set_body("request");
+
+    let remote_ip = Ipv6Addr::new(1, 2, 3, 4, 5, 6, 7, 8);
+    let client = MockService(|request| {
+        assert_eq!(
+            request.headers().get::<XForwardedFor>(),
+            Some(&XForwardedFor(
+                vec![Ipv6Addr::new(1, 2, 3, 4, 5, 6, 7, 8).into()],
+            ))
+        );
+
+        Response::new()
+    });
+    let service = ReverseProxy::new(client, Some(remote_ip.into()));
+
+    service.call(request).wait().unwrap();
+}
+
+#[test]
+fn continues_forwarded_for_header() {
+    use hyper_reverse_proxy::XForwardedFor;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    let mut request = Request::new(Get, "/".parse().unwrap());
+    request.set_body("request");
+    request.headers_mut().set(XForwardedFor(vec![
+        Ipv4Addr::new(127, 0, 0, 1).into(),
+        Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1).into(),
+    ]));
+
+    let remote_ip = Ipv6Addr::new(1, 2, 3, 4, 5, 6, 7, 8);
+    let client = MockService(|request| {
+        assert_eq!(
+            request.headers().get::<XForwardedFor>(),
+            Some(&XForwardedFor(vec![
+                Ipv4Addr::new(127, 0, 0, 1).into(),
+                Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1).into(),
+                Ipv6Addr::new(1, 2, 3, 4, 5, 6, 7, 8).into(),
+            ]))
+        );
+
+        Response::new()
+    });
+    let service = ReverseProxy::new(client, Some(remote_ip.into()));
+
+    service.call(request).wait().unwrap();
 }
 
 #[test]
@@ -35,12 +82,13 @@ fn forwards_the_bodies() {
     let mut request = Request::new(Get, "/".parse().unwrap());
     request.set_body("request");
 
-    let service = ReverseProxy::new(MockService(|request| {
+    let client = MockService(|request| {
         let body = request.body().concat2().wait().unwrap();
         assert_eq!(body.as_ref(), b"request");
 
         Response::new().with_body("response")
-    }));
+    });
+    let service = ReverseProxy::new(client, None);
 
     let response = service.call(request).wait().unwrap();
     let body = response.body().concat2().wait().unwrap();
@@ -56,13 +104,14 @@ fn clones_headers() {
     request.headers_mut().set(XTestHeader1("Test1".to_owned()));
     request.headers_mut().set(XTestHeader2("Test2".to_owned()));
 
-    let service = ReverseProxy::new(MockService(|request| {
+    let client = MockService(|request| {
         let header1 = request.headers().get::<XTestHeader1>().unwrap();
         let header2 = request.headers().get::<XTestHeader2>().unwrap();
         assert_eq!(header1, &XTestHeader1("Test1".to_owned()));
         assert_eq!(header2, &XTestHeader2("Test2".to_owned()));
         Response::new()
-    }));
+    });
+    let service = ReverseProxy::new(client, None);
 
     service.call(request).wait().unwrap();
 }
@@ -81,7 +130,7 @@ fn removes_request_hop_headers() {
     request.headers_mut().set(TransferEncoding(vec![]));
     request.headers_mut().set(Upgrade(vec![]));
 
-    let service = ReverseProxy::new(MockService(|request| {
+    let client = MockService(|request| {
         assert_eq!(request.headers().get::<Connection>(), None);
         assert_eq!(request.headers().get_raw("Keep-Alive"), None);
         assert_eq!(request.headers().get_raw("Proxy-Authenticate"), None);
@@ -91,7 +140,8 @@ fn removes_request_hop_headers() {
         assert_eq!(request.headers().get::<TransferEncoding>(), None);
         assert_eq!(request.headers().get::<Upgrade>(), None);
         Response::new()
-    }));
+    });
+    let service = ReverseProxy::new(client, None);
 
     service.call(request).wait().unwrap();
 }
@@ -102,7 +152,7 @@ fn removes_response_hop_headers() {
 
     let request = Request::new(Get, "/".parse().unwrap());
 
-    let service = ReverseProxy::new(MockService(|_| {
+    let client = MockService(|_| {
         let mut response = Response::new();
         response.headers_mut().set(Connection(vec![]));
         response.headers_mut().set_raw("Keep-Alive", "");
@@ -113,7 +163,8 @@ fn removes_response_hop_headers() {
         response.headers_mut().set(TransferEncoding(vec![]));
         response.headers_mut().set(Upgrade(vec![]));
         response
-    }));
+    });
+    let service = ReverseProxy::new(client, None);
 
     let response = service.call(request).wait().unwrap();
     assert_eq!(response.headers().get::<Connection>(), None);
