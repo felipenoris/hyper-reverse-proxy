@@ -1,0 +1,25 @@
+[package]
+name = "hyper-reverse-proxy"
+version = "0.1.0"
+authors = ["Brendan Zabarauskas <bjzaba@yahoo.com.au>"]
+license = "Apache-2.0"
+description = "A simple reverse proxy, to be used with Hyper and Tokio."
+homepage = "https://github.com/brendanzab/hyper-reverse-proxy"
+documentation = "https://docs.rs/hyper-reverse-proxy"
+repository = "https://github.com/brendanzab/hyper-reverse-proxy"
+keywords = ["http", "hyper"]
+categories = ["network-programming", "web-programming"]
+readme = "README.md"
+
+include = [
+  "Cargo.toml",
+  "LICENSE",
+  "src/**/*"
+]
+
+[dependencies]
+futures = "0.1.14"
+hyper = "0.11.0"
+lazy_static = "0.2"
+unicase = "2.0.0"
+void = "1.0.2"
