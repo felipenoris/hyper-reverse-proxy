@@ -1,6 +1,6 @@
 [package]
 name = "hyper-reverse-proxy"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Brendan Zabarauskas <bjzaba@yahoo.com.au>"]
 license = "Apache-2.0"
 description = "A simple reverse proxy, to be used with Hyper and Tokio."
