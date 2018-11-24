@@ -67,19 +67,27 @@ fn create_proxied_request<B>(client_ip: IpAddr, forward_url: &str, mut request: 
     *request.headers_mut() = remove_hop_headers(request.headers());
     *request.uri_mut() = forward_uri(forward_url, &request);
 
+    let x_forwarded_for_header_name = "x-forwarded-for";
+
     // Add forwarding information in the headers
-    match request.headers_mut().entry("x-forwarded-for") {
-        Ok(hyper::header::Entry::Vacant(entry)) => {
-            let addr = format!("{}", client_ip);
-            entry.insert(addr.parse().unwrap());
-        },
+    match request.headers_mut().entry(x_forwarded_for_header_name) {
 
-        Ok(hyper::header::Entry::Occupied(mut entry)) => {
-            let addr = format!("{}, {}", entry.get().to_str().unwrap(), client_ip);
-            entry.insert(addr.parse().unwrap());
-        },
+        Ok(header_entry) => {
+            match header_entry {
+                hyper::header::Entry::Vacant(entry) => {
+                    let addr = format!("{}", client_ip);
+                    entry.insert(addr.parse().unwrap());
+                },
 
-        _ => (), // silently fails to add x-forwarded-for header
+                hyper::header::Entry::Occupied(mut entry) => {
+                    let addr = format!("{}, {}", entry.get().to_str().unwrap(), client_ip);
+                    entry.insert(addr.parse().unwrap());
+                }
+            }
+        }
+
+        // shouldn't happen...
+        Err(_) => panic!("Invalid header name: {}", x_forwarded_for_header_name),
     }
 
     request
