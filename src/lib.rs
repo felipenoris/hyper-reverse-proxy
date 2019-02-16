@@ -54,8 +54,7 @@
 //!     // This is our socket address...
 //!     let addr = ([127, 0, 0, 1], 13900).into();
 //!
-//!     // A `Service` is needed for every connection, so this
-//!     // creates one from our `hello_world` function.
+//!     // A `Service` is needed for every connection.
 //!     let make_svc = make_service_fn(|socket: &AddrStream| {
 //!         let remote_addr = socket.remote_addr();
 //!         service_fn(move |req: Request<Body>| { // returns BoxFut
