@@ -22,7 +22,7 @@ The implementation is based on Go's [`httputil.ReverseProxy`].
 
 Add these dependencies to your `Cargo.toml` file.
 
-```
+```toml
 [dependencies]
 hyper-reverse-proxy = "0.3.0"
 hyper = "0.12.24"
