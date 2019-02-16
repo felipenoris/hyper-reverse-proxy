@@ -18,7 +18,7 @@ include = [
 ]
 
 [dependencies]
-hyper = "0.12.16"
+hyper = "0.12.24"
 futures = "0.1"
-lazy_static = "1.1"
+lazy_static = "1.2"
 unicase = "2.2"
