@@ -24,8 +24,8 @@ Add these dependencies to your `Cargo.toml` file.
 
 ```toml
 [dependencies]
-hyper-reverse-proxy = "0.3.0"
-hyper = "0.12.24"
+hyper-reverse-proxy = "0.4"
+hyper = "0.12"
 futures = "0.1"
 ```
 
@@ -39,10 +39,6 @@ and will proxy these calls:
 * All other URLs will be handled by `debug_request` function, that will display request information.
 
 ```rust,no_run
-extern crate hyper;
-extern crate hyper_reverse_proxy;
-extern crate futures;
-
 use hyper::server::conn::AddrStream;
 use hyper::{Body, Request, Response, Server};
 use hyper::service::{service_fn, make_service_fn};
@@ -66,11 +62,16 @@ fn main() {
         let remote_addr = socket.remote_addr();
         service_fn(move |req: Request<Body>| { // returns BoxFut
 
-            // Auth
             if req.uri().path().starts_with("/target/first") {
+
+                // will forward requests to port 13901
                 return hyper_reverse_proxy::call(remote_addr.ip(), "http://127.0.0.1:13901", req)
+
             } else if req.uri().path().starts_with("/target/second") {
+
+                // will forward requests to port 13902
                 return hyper_reverse_proxy::call(remote_addr.ip(), "http://127.0.0.1:13902", req)
+
             } else {
                 debug_request(req)
             }
