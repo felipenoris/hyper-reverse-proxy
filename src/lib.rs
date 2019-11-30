@@ -83,15 +83,15 @@
 //! ```
 //!
 
+use futures::future::{self, Future};
+use hyper::header::{HeaderMap, HeaderValue};
 use hyper::Body;
+use hyper::{Client, Request, Response, StatusCode, Uri};
+use lazy_static::lazy_static;
 use std::net::IpAddr;
 use std::str::FromStr;
-use hyper::header::{HeaderMap, HeaderValue};
-use hyper::{Request, Response, Client, Uri, StatusCode};
-use futures::future::{self, Future};
-use lazy_static::lazy_static;
 
-type BoxFut = Box<Future<Item=Response<Body>, Error=hyper::Error> + Send>;
+type BoxFut = Box<Future<Item = Response<Body>, Error = hyper::Error> + Send>;
 
 fn is_hop_header(name: &str) -> bool {
     use unicase::Ascii;
@@ -142,7 +142,11 @@ fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> Uri {
     Uri::from_str(forward_uri.as_str()).unwrap()
 }
 
-fn create_proxied_request<B>(client_ip: IpAddr, forward_url: &str, mut request: Request<B>) -> Request<B> {
+fn create_proxied_request<B>(
+    client_ip: IpAddr,
+    forward_url: &str,
+    mut request: Request<B>,
+) -> Request<B> {
     *request.headers_mut() = remove_hop_headers(request.headers());
     *request.uri_mut() = forward_uri(forward_url, &request);
 
@@ -150,20 +154,17 @@ fn create_proxied_request<B>(client_ip: IpAddr, forward_url: &str, mut request: 
 
     // Add forwarding information in the headers
     match request.headers_mut().entry(x_forwarded_for_header_name) {
-
-        Ok(header_entry) => {
-            match header_entry {
-                hyper::header::Entry::Vacant(entry) => {
-                    let addr = format!("{}", client_ip);
-                    entry.insert(addr.parse().unwrap());
-                },
-
-                hyper::header::Entry::Occupied(mut entry) => {
-                    let addr = format!("{}, {}", entry.get().to_str().unwrap(), client_ip);
-                    entry.insert(addr.parse().unwrap());
-                }
+        Ok(header_entry) => match header_entry {
+            hyper::header::Entry::Vacant(entry) => {
+                let addr = format!("{}", client_ip);
+                entry.insert(addr.parse().unwrap());
             }
-        }
+
+            hyper::header::Entry::Occupied(mut entry) => {
+                let addr = format!("{}, {}", entry.get().to_str().unwrap(), client_ip);
+                entry.insert(addr.parse().unwrap());
+            }
+        },
 
         // shouldn't happen...
         Err(_) => panic!("Invalid header name: {}", x_forwarded_for_header_name),
@@ -173,13 +174,11 @@ fn create_proxied_request<B>(client_ip: IpAddr, forward_url: &str, mut request: 
 }
 
 pub fn call(client_ip: IpAddr, forward_uri: &str, request: Request<Body>) -> BoxFut {
+    let proxied_request = create_proxied_request(client_ip, forward_uri, request);
 
-	let proxied_request = create_proxied_request(client_ip, forward_uri, request);
-
-	let client = Client::new();
-	let response = client.request(proxied_request).then(|response| {
-
-		let proxied_response = match response {
+    let client = Client::new();
+    let response = client.request(proxied_request).then(|response| {
+        let proxied_response = match response {
             Ok(response) => create_proxied_response(response),
             Err(error) => {
                 println!("Error: {}", error); // TODO: Configurable logging
@@ -187,12 +186,11 @@ pub fn call(client_ip: IpAddr, forward_uri: &str, request: Request<Body>) -> Box
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .body(Body::empty())
                     .unwrap()
-            },
+            }
         };
 
-
         future::ok(proxied_response)
-	});
+    });
 
-	Box::new(response)
+    Box::new(response)
 }
