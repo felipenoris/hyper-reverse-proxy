@@ -34,7 +34,7 @@
 //!
 //! ```rust,no_run
 //! use hyper::server::conn::AddrStream;
-//! use hyper::{Body, Request, Response, Server};
+//! use hyper::{Body, Request, Response, Server, StatusCode};
 //! use hyper::service::{service_fn, make_service_fn};
 //! use futures::future::{self, Future};
 //! use std::{convert::Infallible, net::SocketAddr};
@@ -49,13 +49,23 @@
 //! async fn handle(client_ip: IpAddr, req: Request<Body>) -> Result<Response<Body>, Infallible> {
 //!     if req.uri().path().starts_with("/target/first") {
 //!         // will forward requests to port 13901
-//!         Ok(hyper_reverse_proxy::call(client_ip, "http://127.0.0.1:13901", req).await.unwrap())
-//!
+//!         match hyper_reverse_proxy::call(client_ip, "http://127.0.0.1:13901", req).await {
+//!             Ok(response) => {Ok(response)}
+//!             Err(error) => {Ok(Response::builder()
+//!                                   .status(StatusCode::INTERNAL_SERVER_ERROR)
+//!                                   .body(Body::empty())
+//!                                   .unwrap())}
+//!         }
 //!     } else if req.uri().path().starts_with("/target/second") {
 //!
 //!         // will forward requests to port 13902
-//!         Ok(hyper_reverse_proxy::call(client_ip, "http://127.0.0.1:13902", req).await.unwrap())
-//!
+//!         match hyper_reverse_proxy::call(client_ip, "http://127.0.0.1:13902", req).await {
+//!             Ok(response) => {Ok(response)}
+//!             Err(error) => {Ok(Response::builder()
+//!                                   .status(StatusCode::INTERNAL_SERVER_ERROR)
+//!                                   .body(Body::empty())
+//!                                   .unwrap())}
+//!         }
 //!     } else {
 //!         debug_request(req)
 //!     }
@@ -85,11 +95,42 @@
 //!
 
 use hyper::header::{HeaderMap, HeaderValue};
+use hyper::http::header::{InvalidHeaderValue, ToStrError};
 use hyper::http::uri::InvalidUri;
-use hyper::{Body, Client, Request, Response, StatusCode, Uri};
+use hyper::{Body, Client, Error, Request, Response, Uri};
 use lazy_static::lazy_static;
 use std::net::IpAddr;
 use std::str::FromStr;
+
+pub enum ProxyError {
+    InvalidUri(InvalidUri),
+    HyperError(Error),
+    ForwardHeaderError,
+}
+
+impl From<Error> for ProxyError {
+    fn from(err: Error) -> ProxyError {
+        ProxyError::HyperError(err)
+    }
+}
+
+impl From<InvalidUri> for ProxyError {
+    fn from(err: InvalidUri) -> ProxyError {
+        ProxyError::InvalidUri(err)
+    }
+}
+
+impl From<ToStrError> for ProxyError {
+    fn from(_err: ToStrError) -> ProxyError {
+        ProxyError::ForwardHeaderError
+    }
+}
+
+impl From<InvalidHeaderValue> for ProxyError {
+    fn from(_err: InvalidHeaderValue) -> ProxyError {
+        ProxyError::ForwardHeaderError
+    }
+}
 
 fn is_hop_header(name: &str) -> bool {
     use unicase::Ascii;
@@ -144,7 +185,7 @@ fn create_proxied_request<B>(
     client_ip: IpAddr,
     forward_url: &str,
     mut request: Request<B>,
-) -> Result<Request<B>, InvalidUri> {
+) -> Result<Request<B>, ProxyError> {
     *request.headers_mut() = remove_hop_headers(request.headers());
     *request.uri_mut() = forward_uri(forward_url, &request)?;
 
@@ -153,12 +194,12 @@ fn create_proxied_request<B>(
     // Add forwarding information in the headers
     match request.headers_mut().entry(x_forwarded_for_header_name) {
         hyper::header::Entry::Vacant(entry) => {
-            entry.insert(client_ip.to_string().parse().unwrap());
+            entry.insert(client_ip.to_string().parse()?);
         }
 
         hyper::header::Entry::Occupied(mut entry) => {
-            let addr = format!("{}, {}", entry.get().to_str().unwrap(), client_ip);
-            entry.insert(addr.parse().unwrap());
+            let addr = format!("{}, {}", entry.get().to_str()?, client_ip);
+            entry.insert(addr.parse()?);
         }
     }
 
@@ -169,20 +210,11 @@ pub async fn call(
     client_ip: IpAddr,
     forward_uri: &str,
     request: Request<Body>,
-) -> Result<Response<Body>, InvalidUri> {
+) -> Result<Response<Body>, ProxyError> {
     let proxied_request = create_proxied_request(client_ip, &forward_uri, request)?;
 
     let client = Client::new();
-    let response = client.request(proxied_request).await;
-    let proxied_response = match response {
-        Ok(response) => create_proxied_response(response),
-        Err(error) => {
-            println!("Error: {}", error); // TODO: Configurable logging
-            Response::builder()
-                .status(StatusCode::SERVICE_UNAVAILABLE)
-                .body(Body::empty())
-                .unwrap()
-        }
-    };
+    let response = client.request(proxied_request).await?;
+    let proxied_response = create_proxied_response(response);
     Ok(proxied_response)
 }
