@@ -17,9 +17,10 @@
 //!
 //! ```toml
 //! [dependencies]
-//! hyper-reverse-proxy = "0.4"
-//! hyper = "0.12"
-//! futures = "0.1"
+//! hyper-reverse-proxy = "0.5"
+//! hyper = "0.13"
+//! futures = "0.3"
+//! tokio = { version = "0.2", features = ["full"] }
 //! ```
 //!
 //! The following example will set up a reverse proxy listening on `127.0.0.1:13900`,
@@ -36,62 +37,59 @@
 //! use hyper::{Body, Request, Response, Server};
 //! use hyper::service::{service_fn, make_service_fn};
 //! use futures::future::{self, Future};
+//! use std::{convert::Infallible, net::SocketAddr};
+//! use hyper::http::uri::InvalidUri;
+//! use std::net::IpAddr;
 //!
-//! type BoxFut = Box<Future<Item=Response<Body>, Error=hyper::Error> + Send>;
-//!
-//! fn debug_request(req: Request<Body>) -> BoxFut {
+//! fn debug_request(req: Request<Body>) -> Result<Response<Body>, Infallible>  {
 //!     let body_str = format!("{:?}", req);
-//!     let response = Response::new(Body::from(body_str));
-//!     Box::new(future::ok(response))
+//!     Ok(Response::new(Body::from(body_str)))
 //! }
 //!
-//! fn main() {
+//! async fn handle(client_ip: IpAddr, req: Request<Body>) -> Result<Response<Body>, Infallible> {
+//!     if req.uri().path().starts_with("/target/first") {
+//!         // will forward requests to port 13901
+//!         Ok(hyper_reverse_proxy::call(client_ip, "http://127.0.0.1:13901", req).await.unwrap())
 //!
-//!     // This is our socket address...
-//!     let addr = ([127, 0, 0, 1], 13900).into();
+//!     } else if req.uri().path().starts_with("/target/second") {
 //!
-//!     // A `Service` is needed for every connection.
-//!     let make_svc = make_service_fn(|socket: &AddrStream| {
-//!         let remote_addr = socket.remote_addr();
-//!         service_fn(move |req: Request<Body>| { // returns BoxFut
+//!         // will forward requests to port 13902
+//!         Ok(hyper_reverse_proxy::call(client_ip, "http://127.0.0.1:13902", req).await.unwrap())
 //!
-//!             if req.uri().path().starts_with("/target/first") {
+//!     } else {
+//!         debug_request(req)
+//!     }
+//! }
 //!
-//!                 // will forward requests to port 13901
-//!                 return hyper_reverse_proxy::call(remote_addr.ip(), "http://127.0.0.1:13901", req)
+//! #[tokio::main]
+//! async fn main() {
+//!     let bind_addr = "127.0.0.1:8000";
+//!     let addr:SocketAddr = bind_addr.parse().expect("Could not parse ip:port.");
 //!
-//!             } else if req.uri().path().starts_with("/target/second") {
-//!
-//!                 // will forward requests to port 13902
-//!                 return hyper_reverse_proxy::call(remote_addr.ip(), "http://127.0.0.1:13902", req)
-//!
-//!             } else {
-//!                 debug_request(req)
-//!             }
-//!         })
+//!     let make_svc = make_service_fn(|conn: &AddrStream| {
+//!         let remote_addr = conn.remote_addr().ip();
+//!         async move {
+//!             Ok::<_, Infallible>(service_fn(move |req| handle(remote_addr, req)))
+//!         }
 //!     });
 //!
-//!     let server = Server::bind(&addr)
-//!         .serve(make_svc)
-//!         .map_err(|e| eprintln!("server error: {}", e));
+//!     let server = Server::bind(&addr).serve(make_svc);
+//!
+//!     if let Err(e) = server.await {
+//!         eprintln!("server error: {}", e);
+//!     }
 //!
 //!     println!("Running server on {:?}", addr);
-//!
-//!     // Run this server for... forever!
-//!     hyper::rt::run(server);
 //! }
 //! ```
 //!
 
-use hyper::Body;
+use hyper::header::{HeaderMap, HeaderValue};
+use hyper::http::uri::InvalidUri;
+use hyper::{Body, Client, Request, Response, StatusCode, Uri};
+use lazy_static::lazy_static;
 use std::net::IpAddr;
 use std::str::FromStr;
-use hyper::header::{HeaderMap, HeaderValue};
-use hyper::{Request, Response, Client, Uri, StatusCode};
-use futures::future::{self, Future};
-use lazy_static::lazy_static;
-
-type BoxFut = Box<Future<Item=Response<Body>, Error=hyper::Error> + Send>;
 
 fn is_hop_header(name: &str) -> bool {
     use unicase::Ascii;
@@ -133,66 +131,58 @@ fn create_proxied_response<B>(mut response: Response<B>) -> Response<B> {
     response
 }
 
-fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> Uri {
+fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> Result<Uri, InvalidUri> {
     let forward_uri = match req.uri().query() {
         Some(query) => format!("{}{}?{}", forward_url, req.uri().path(), query),
         None => format!("{}{}", forward_url, req.uri().path()),
     };
 
-    Uri::from_str(forward_uri.as_str()).unwrap()
+    Uri::from_str(forward_uri.as_str())
 }
 
-fn create_proxied_request<B>(client_ip: IpAddr, forward_url: &str, mut request: Request<B>) -> Request<B> {
+fn create_proxied_request<B>(
+    client_ip: IpAddr,
+    forward_url: &str,
+    mut request: Request<B>,
+) -> Result<Request<B>, InvalidUri> {
     *request.headers_mut() = remove_hop_headers(request.headers());
-    *request.uri_mut() = forward_uri(forward_url, &request);
+    *request.uri_mut() = forward_uri(forward_url, &request)?;
 
     let x_forwarded_for_header_name = "x-forwarded-for";
 
     // Add forwarding information in the headers
     match request.headers_mut().entry(x_forwarded_for_header_name) {
-
-        Ok(header_entry) => {
-            match header_entry {
-                hyper::header::Entry::Vacant(entry) => {
-                    let addr = format!("{}", client_ip);
-                    entry.insert(addr.parse().unwrap());
-                },
-
-                hyper::header::Entry::Occupied(mut entry) => {
-                    let addr = format!("{}, {}", entry.get().to_str().unwrap(), client_ip);
-                    entry.insert(addr.parse().unwrap());
-                }
-            }
+        hyper::header::Entry::Vacant(entry) => {
+            entry.insert(client_ip.to_string().parse().unwrap());
         }
 
-        // shouldn't happen...
-        Err(_) => panic!("Invalid header name: {}", x_forwarded_for_header_name),
+        hyper::header::Entry::Occupied(mut entry) => {
+            let addr = format!("{}, {}", entry.get().to_str().unwrap(), client_ip);
+            entry.insert(addr.parse().unwrap());
+        }
     }
 
-    request
+    Ok(request)
 }
 
-pub fn call(client_ip: IpAddr, forward_uri: &str, request: Request<Body>) -> BoxFut {
+pub async fn call(
+    client_ip: IpAddr,
+    forward_uri: &str,
+    request: Request<Body>,
+) -> Result<Response<Body>, InvalidUri> {
+    let proxied_request = create_proxied_request(client_ip, &forward_uri, request)?;
 
-	let proxied_request = create_proxied_request(client_ip, forward_uri, request);
-
-	let client = Client::new();
-	let response = client.request(proxied_request).then(|response| {
-
-		let proxied_response = match response {
-            Ok(response) => create_proxied_response(response),
-            Err(error) => {
-                println!("Error: {}", error); // TODO: Configurable logging
-                Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Body::empty())
-                    .unwrap()
-            },
-        };
-
-
-        future::ok(proxied_response)
-	});
-
-	Box::new(response)
+    let client = Client::new();
+    let response = client.request(proxied_request).await;
+    let proxied_response = match response {
+        Ok(response) => create_proxied_response(response),
+        Err(error) => {
+            println!("Error: {}", error); // TODO: Configurable logging
+            Response::builder()
+                .status(StatusCode::SERVICE_UNAVAILABLE)
+                .body(Body::empty())
+                .unwrap()
+        }
+    };
+    Ok(proxied_response)
 }
