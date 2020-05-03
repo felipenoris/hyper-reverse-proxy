@@ -19,7 +19,6 @@
 //! [dependencies]
 //! hyper-reverse-proxy = "0.5"
 //! hyper = "0.13"
-//! futures = "0.3"
 //! tokio = { version = "0.2", features = ["full"] }
 //! ```
 //!
@@ -36,7 +35,6 @@
 //! use hyper::server::conn::AddrStream;
 //! use hyper::{Body, Request, Response, Server, StatusCode};
 //! use hyper::service::{service_fn, make_service_fn};
-//! use futures::future::{self, Future};
 //! use std::{convert::Infallible, net::SocketAddr};
 //! use hyper::http::uri::InvalidUri;
 //! use std::net::IpAddr;

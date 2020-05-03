@@ -20,7 +20,6 @@ include = [
 
 [dependencies]
 hyper = "0.13"
-futures = "0.3"
 lazy_static = "1.4"
 unicase = "2.6"
 
