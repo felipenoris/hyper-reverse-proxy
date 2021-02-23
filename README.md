@@ -24,9 +24,9 @@ Add these dependencies to your `Cargo.toml` file.
 
 ```toml
 [dependencies]
-hyper-reverse-proxy = "0.4"
-hyper = "0.12"
-futures = "0.1"
+hyper-reverse-proxy = "0.5"
+hyper = "0.13"
+tokio = { version = "0.2", features = ["full"] }
 ```
 
 The following example will set up a reverse proxy listening on `127.0.0.1:13900`,
