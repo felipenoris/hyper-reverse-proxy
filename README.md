@@ -24,9 +24,9 @@ Add these dependencies to your `Cargo.toml` file.
 
 ```toml
 [dependencies]
-hyper-reverse-proxy = "0.5"
-hyper = "0.13"
-tokio = { version = "0.2", features = ["full"] }
+hyper-reverse-proxy = "0.6"
+hyper = { version = "0.14", features = ["server"] }
+tokio = { version = "1", features = ["full"] }
 ```
 
 The following example will set up a reverse proxy listening on `127.0.0.1:13900`,
@@ -39,52 +39,61 @@ and will proxy these calls:
 * All other URLs will be handled by `debug_request` function, that will display request information.
 
 ```rust,no_run
-use hyper::server::conn::AddrStream;
-use hyper::{Body, Request, Response, Server};
+use hyper::server::{Server, conn::AddrStream};
+use hyper::{Body, Request, Response, StatusCode};
 use hyper::service::{service_fn, make_service_fn};
-use futures::future::{self, Future};
+use std::{convert::Infallible, net::SocketAddr};
+use hyper::http::uri::InvalidUri;
+use std::net::IpAddr;
 
-type BoxFut = Box<Future<Item=Response<Body>, Error=hyper::Error> + Send>;
-
-fn debug_request(req: Request<Body>) -> BoxFut {
+fn debug_request(req: Request<Body>) -> Result<Response<Body>, Infallible>  {
     let body_str = format!("{:?}", req);
-    let response = Response::new(Body::from(body_str));
-    Box::new(future::ok(response))
+    Ok(Response::new(Body::from(body_str)))
 }
 
-fn main() {
+async fn handle(client_ip: IpAddr, req: Request<Body>) -> Result<Response<Body>, Infallible> {
+    if req.uri().path().starts_with("/target/first") {
+        // will forward requests to port 13901
+        match hyper_reverse_proxy::call(client_ip, "http://127.0.0.1:13901", req).await {
+            Ok(response) => {Ok(response)}
+            Err(error) => {Ok(Response::builder()
+                                  .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                  .body(Body::empty())
+                                  .unwrap())}
+        }
+    } else if req.uri().path().starts_with("/target/second") {
 
-    // This is our socket address...
-    let addr = ([127, 0, 0, 1], 13900).into();
+        // will forward requests to port 13902
+        match hyper_reverse_proxy::call(client_ip, "http://127.0.0.1:13902", req).await {
+            Ok(response) => {Ok(response)}
+            Err(error) => {Ok(Response::builder()
+                                  .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                  .body(Body::empty())
+                                  .unwrap())}
+        }
+    } else {
+        debug_request(req)
+    }
+}
 
-    // A `Service` is needed for every connection.
-    let make_svc = make_service_fn(|socket: &AddrStream| {
-        let remote_addr = socket.remote_addr();
-        service_fn(move |req: Request<Body>| { // returns BoxFut
+#[tokio::main]
+async fn main() {
+    let bind_addr = "127.0.0.1:13900";
+    let addr:SocketAddr = bind_addr.parse().expect("Could not parse ip:port.");
 
-            if req.uri().path().starts_with("/target/first") {
-
-                // will forward requests to port 13901
-                return hyper_reverse_proxy::call(remote_addr.ip(), "http://127.0.0.1:13901", req)
-
-            } else if req.uri().path().starts_with("/target/second") {
-
-                // will forward requests to port 13902
-                return hyper_reverse_proxy::call(remote_addr.ip(), "http://127.0.0.1:13902", req)
-
-            } else {
-                debug_request(req)
-            }
-        })
+    let make_svc = make_service_fn(|conn: &AddrStream| {
+        let remote_addr = conn.remote_addr().ip();
+        async move {
+            Ok::<_, Infallible>(service_fn(move |req| handle(remote_addr, req)))
+        }
     });
 
-    let server = Server::bind(&addr)
-        .serve(make_svc)
-        .map_err(|e| eprintln!("server error: {}", e));
+    let server = Server::bind(&addr).serve(make_svc);
+
+    if let Err(e) = server.await {
+        eprintln!("server error: {}", e);
+    }
 
     println!("Running server on {:?}", addr);
-
-    // Run this server for... forever!
-    hyper::rt::run(server);
 }
 ```

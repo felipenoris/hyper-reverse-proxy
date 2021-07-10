@@ -1,6 +1,6 @@
 [package]
 name = "hyper-reverse-proxy"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Brendan Zabarauskas <bjzaba@yahoo.com.au>", "Felipe Noronha <felipenoris@gmail.com>", "Jan Kantert <jan-hyper-reverse-proxy@kantert.net>"]
 license = "Apache-2.0"
 description = "A simple reverse proxy, to be used with Hyper and Tokio."
@@ -19,9 +19,10 @@ include = [
 ]
 
 [dependencies]
-hyper = "0.13"
+hyper = { version = "0.14", features = ["client", "http1", "http2", "tcp" ] }
 lazy_static = "1.4"
 unicase = "2.6"
 
 [dev-dependencies]
-tokio = { version = "0.2", features = ["full"] }
+hyper = { version = "0.14", features = ["client", "http1", "http2", "tcp", "server" ] }
+tokio = { version = "1", features = ["full"] }

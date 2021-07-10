@@ -17,9 +17,9 @@
 //!
 //! ```toml
 //! [dependencies]
-//! hyper-reverse-proxy = "0.5"
-//! hyper = "0.13"
-//! tokio = { version = "0.2", features = ["full"] }
+//! hyper-reverse-proxy = "0.6"
+//! hyper = "0.14"
+//! tokio = { version = "1.0", features = ["full"] }
 //! ```
 //!
 //! The following example will set up a reverse proxy listening on `127.0.0.1:13900`,
@@ -32,8 +32,8 @@
 //! * All other URLs will be handled by `debug_request` function, that will display request information.
 //!
 //! ```rust,no_run
-//! use hyper::server::conn::AddrStream;
-//! use hyper::{Body, Request, Response, Server, StatusCode};
+//! use hyper::server::{Server, conn::AddrStream};
+//! use hyper::{Body, Request, Response, StatusCode};
 //! use hyper::service::{service_fn, make_service_fn};
 //! use std::{convert::Infallible, net::SocketAddr};
 //! use hyper::http::uri::InvalidUri;
@@ -92,10 +92,11 @@
 //! ```
 //!
 
+use hyper::client::Client;
 use hyper::header::{HeaderMap, HeaderValue};
 use hyper::http::header::{InvalidHeaderValue, ToStrError};
 use hyper::http::uri::InvalidUri;
-use hyper::{Body, Client, Error, Request, Response, Uri};
+use hyper::{Body, Error, Request, Response, Uri};
 use lazy_static::lazy_static;
 use std::net::IpAddr;
 use std::str::FromStr;
