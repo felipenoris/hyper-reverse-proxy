@@ -19,9 +19,10 @@ include = [
 ]
 
 [dependencies]
+hyper = { version = "^0.14", features = ["full"] }
 hyper-rustls = { version = "^0.22" }
 lazy_static = "1.4"
 unicase = "2.6"
 
 [dev-dependencies]
-tokio = { version = "0.2", features = ["full"] }
+tokio = { version = "^1.5", features = ["full"] }
