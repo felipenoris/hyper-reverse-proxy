@@ -212,7 +212,9 @@ pub async fn call(
 ) -> Result<Response<Body>, ProxyError> {
     let proxied_request = create_proxied_request(client_ip, &forward_uri, request)?;
 
-    let client = Client::new();
+    let https = hyper_rustls::HttpsConnector::with_native_roots();
+    let client: Client<_, hyper::Body> = Client::builder().build(https);
+
     let response = client.request(proxied_request).await?;
     let proxied_response = create_proxied_response(response);
     Ok(proxied_response)

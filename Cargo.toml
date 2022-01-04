@@ -19,7 +19,7 @@ include = [
 ]
 
 [dependencies]
-hyper = "0.13"
+hyper-rustls = { version = "^0.22" }
 lazy_static = "1.4"
 unicase = "2.6"
 
