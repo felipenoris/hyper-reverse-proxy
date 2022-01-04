@@ -100,6 +100,7 @@ use lazy_static::lazy_static;
 use std::net::IpAddr;
 use std::str::FromStr;
 
+#[derive(Debug)]
 pub enum ProxyError {
     InvalidUri(InvalidUri),
     HyperError(Error),
