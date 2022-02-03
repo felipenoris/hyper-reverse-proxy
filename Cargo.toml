@@ -19,9 +19,9 @@ include = [
 ]
 
 [dependencies]
-hyper = "0.13"
+hyper = { version = "0.14", features = ["full"] }
 lazy_static = "1.4"
 unicase = "2.6"
 
 [dev-dependencies]
-tokio = { version = "0.2", features = ["full"] }
+tokio = { version = "0.3", features = ["full"] }

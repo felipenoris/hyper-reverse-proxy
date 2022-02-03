@@ -59,7 +59,7 @@
 //!         // will forward requests to port 13902
 //!         match hyper_reverse_proxy::call(client_ip, "http://127.0.0.1:13902", req).await {
 //!             Ok(response) => {Ok(response)}
-//!             Err(error) => {Ok(Response::builder()
+//!             Err(_error) => {Ok(Response::builder()
 //!                                   .status(StatusCode::INTERNAL_SERVER_ERROR)
 //!                                   .body(Body::empty())
 //!                                   .unwrap())}
@@ -83,11 +83,10 @@
 //!
 //!     let server = Server::bind(&addr).serve(make_svc);
 //!
+//!     println!("Running server on {:?}", addr);
 //!     if let Err(e) = server.await {
 //!         eprintln!("server error: {}", e);
 //!     }
-//!
-//!     println!("Running server on {:?}", addr);
 //! }
 //! ```
 //!
