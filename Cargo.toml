@@ -24,4 +24,4 @@ lazy_static = "1.4"
 unicase = "2.6"
 
 [dev-dependencies]
-tokio = { version = "0.3", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
