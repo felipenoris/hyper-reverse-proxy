@@ -54,7 +54,6 @@
 //!                                   .unwrap())}
 //!         }
 //!     } else if req.uri().path().starts_with("/target/second") {
-//!
 //!         // will forward requests to port 13902
 //!         match hyper_reverse_proxy::call(client_ip, "http://127.0.0.1:13902", req).await {
 //!             Ok(response) => {Ok(response)}
