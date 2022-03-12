@@ -36,7 +36,6 @@
 //! use hyper::{Body, Request, Response, Server, StatusCode};
 //! use hyper::service::{service_fn, make_service_fn};
 //! use std::{convert::Infallible, net::SocketAddr};
-//! use hyper::http::uri::InvalidUri;
 //! use std::net::IpAddr;
 //!
 //! fn debug_request(req: Request<Body>) -> Result<Response<Body>, Infallible>  {
@@ -49,7 +48,7 @@
 //!         // will forward requests to port 13901
 //!         match hyper_reverse_proxy::call(client_ip, "http://127.0.0.1:13901", req).await {
 //!             Ok(response) => {Ok(response)}
-//!             Err(error) => {Ok(Response::builder()
+//!             Err(_error) => {Ok(Response::builder()
 //!                                   .status(StatusCode::INTERNAL_SERVER_ERROR)
 //!                                   .body(Body::empty())
 //!                                   .unwrap())}
