@@ -73,18 +73,23 @@ async fn handle(client_ip: IpAddr, req: Request<Body>) -> Result<Response<Body>,
         debug_request(req)
     }
 }
+
 #[tokio::main]
 async fn main() {
     let bind_addr = "127.0.0.1:8000";
     let addr:SocketAddr = bind_addr.parse().expect("Could not parse ip:port.");
+
     let make_svc = make_service_fn(|conn: &AddrStream| {
         let remote_addr = conn.remote_addr().ip();
         async move {
             Ok::<_, Infallible>(service_fn(move |req| handle(remote_addr, req)))
         }
     });
+
     let server = Server::bind(&addr).serve(make_svc);
+
     println!("Running server on {:?}", addr);
+
     if let Err(e) = server.await {
         eprintln!("server error: {}", e);
     }
