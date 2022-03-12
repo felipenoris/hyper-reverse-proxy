@@ -26,16 +26,14 @@ Add these dependencies to your `Cargo.toml` file.
 [dependencies]
 hyper-reverse-proxy = "0.5"
 hyper = { version = "0.14", features = ["full"] }
-tokio = { version = "0.3", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
 ```
 
 The following example will set up a reverse proxy listening on `127.0.0.1:13900`,
 and will proxy these calls:
 
 * `"/target/first"` will be proxied to `http://127.0.0.1:13901`
-
 * `"/target/second"` will be proxied to `http://127.0.0.1:13902`
-
 * All other URLs will be handled by `debug_request` function, that will display request information.
 
 ```rust,no_run
@@ -52,8 +50,8 @@ fn debug_request(req: Request<Body>) -> BoxFut {
     Box::new(future::ok(response))
 }
 
+#[tokio::main]
 fn main() {
-
     // This is our socket address...
     let addr = ([127, 0, 0, 1], 13900).into();
 
@@ -78,13 +76,12 @@ fn main() {
         })
     });
 
-    let server = Server::bind(&addr)
-        .serve(make_svc)
-        .map_err(|e| eprintln!("server error: {}", e));
-
+    let server = Server::bind(&addr).serve(make_svc);
+    
+    // Run this server for... forever!    
     println!("Running server on {:?}", addr);
-
-    // Run this server for... forever!
-    hyper::rt::run(server);
+    if let Err(e) = server.await {
+        eprintln!("server error: {}", e);
+    }
 }
 ```
