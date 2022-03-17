@@ -22,6 +22,12 @@
 //! tokio = { version = "1", features = ["full"] }
 //! ```
 //!
+//! To enable support for connecting to downstream HTTPS servers, enable the `https` feature:
+//!
+//! ```toml
+//! hyper-reverse-proxy = { version = "0.4", features = ["https"] }
+//! ```
+//!
 //! The following example will set up a reverse proxy listening on `127.0.0.1:13900`,
 //! and will proxy these calls:
 //!
@@ -90,6 +96,7 @@
 //! ```
 //!
 
+use hyper::client::{connect::dns::GaiResolver, HttpConnector};
 use hyper::header::{HeaderMap, HeaderValue};
 use hyper::http::header::{InvalidHeaderValue, ToStrError};
 use hyper::http::uri::InvalidUri;
@@ -203,6 +210,17 @@ fn create_proxied_request<B>(
     Ok(request)
 }
 
+#[cfg(feature = "https")]
+fn build_client() -> Client<hyper_tls::HttpsConnector<HttpConnector<GaiResolver>>, hyper::Body> {
+    let https = hyper_tls::HttpsConnector::new();
+    Client::builder().build::<_, hyper::Body>(https)
+}
+
+#[cfg(not(feature = "https"))]
+fn build_client() -> Client<HttpConnector<GaiResolver>, hyper::Body> {
+    Client::new()
+}
+
 pub async fn call(
     client_ip: IpAddr,
     forward_uri: &str,
@@ -210,7 +228,7 @@ pub async fn call(
 ) -> Result<Response<Body>, ProxyError> {
     let proxied_request = create_proxied_request(client_ip, &forward_uri, request)?;
 
-    let client = Client::new();
+    let client = build_client();
     let response = client.request(proxied_request).await?;
     let proxied_response = create_proxied_response(response);
     Ok(proxied_response)
