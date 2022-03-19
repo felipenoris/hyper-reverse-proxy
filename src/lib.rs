@@ -100,10 +100,9 @@ use hyper::client::{connect::dns::GaiResolver, HttpConnector};
 use hyper::header::{HeaderMap, HeaderValue, HOST};
 use hyper::http::header::{InvalidHeaderValue, ToStrError};
 use hyper::http::uri::InvalidUri;
-use hyper::{Body, Client, Error, Request, Response, Uri};
+use hyper::{Body, Client, Error, Request, Response};
 use lazy_static::lazy_static;
 use std::net::IpAddr;
-use std::str::FromStr;
 
 #[derive(Debug)]
 pub enum ProxyError {
@@ -180,13 +179,25 @@ fn create_proxied_response<B>(mut response: Response<B>, host: HeaderValue) -> R
     response
 }
 
-fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> Result<Uri, InvalidUri> {
-    let forward_uri = match req.uri().query() {
-        Some(query) => format!("{}{}?{}", forward_url, req.uri().path(), query),
-        None => format!("{}{}", forward_url, req.uri().path()),
-    };
 
-    Uri::from_str(forward_uri.as_str())
+fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
+    if let Some(query) = req.uri().query() {
+        let mut forwarding_uri = String::with_capacity(forward_url.len() + req.uri().path().len() + query.len() + 1);
+
+        forwarding_uri.push_str(forward_url);
+        forwarding_uri.push_str(req.uri().path());
+        forwarding_uri.push('?');
+        forwarding_uri.push_str(query);
+
+        forwarding_uri
+    } else {
+        let mut forwarding_uri = String::with_capacity(forward_url.len() + req.uri().path().len());
+
+        forwarding_uri.push_str(forward_url);
+        forwarding_uri.push_str(req.uri().path());
+
+        forwarding_uri
+    }
 }
 
 fn create_proxied_request<B>(
@@ -194,10 +205,11 @@ fn create_proxied_request<B>(
     forward_url: &str,
     mut request: Request<B>,
 ) -> Result<Request<B>, ProxyError> {
-    let uri = forward_uri(forward_url, &request)?;
+    let uri: hyper::Uri = forward_uri(forward_url, &request).parse()?;
+    let host = uri.host().map(|e|e.to_owned());
 
     *request.headers_mut() = remove_hop_headers(request.headers());
-    *request.uri_mut() = uri.to_owned();
+    *request.uri_mut() = uri;
 
     let x_forwarded_for_header_name = "x-forwarded-for";
 
@@ -213,7 +225,7 @@ fn create_proxied_request<B>(
         }
     }
 
-    request.headers_mut().insert(HOST, uri.host().unwrap().parse()?);
+    request.headers_mut().insert(HOST, host.unwrap().parse::<HeaderValue>()?);
 
     Ok(request)
 }
@@ -236,7 +248,7 @@ pub async fn call(
 ) -> Result<Response<Body>, ProxyError> {
     let host = request.headers().get(HOST).unwrap_or(&HeaderValue::from_str("").unwrap()).to_owned();
 
-    let proxied_request = create_proxied_request(client_ip, &forward_uri, request)?;
+    let proxied_request = create_proxied_request(client_ip, forward_uri, request)?;
 
     let client = build_client();
     let response = client.request(proxied_request).await?;
