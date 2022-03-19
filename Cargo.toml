@@ -21,7 +21,6 @@ include = [
 [dependencies]
 hyper = { version = "0.14", features = ["full"] }
 lazy_static = "1.4"
-unicase = "2.6"
 hyper-tls = { version = "0.5", optional = true }
 
 [dev-dependencies]
