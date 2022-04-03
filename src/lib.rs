@@ -97,12 +97,28 @@
 //!
 
 use hyper::client::{connect::dns::GaiResolver, HttpConnector};
-use hyper::header::{HeaderMap, HeaderValue, HOST};
+use hyper::header::{HeaderMap, HeaderValue, HeaderName, HOST};
 use hyper::http::header::{InvalidHeaderValue, ToStrError};
 use hyper::http::uri::InvalidUri;
 use hyper::{Body, Client, Error, Request, Response};
 use lazy_static::lazy_static;
 use std::net::IpAddr;
+
+lazy_static! {
+    // A list of the headers, using hypers actual HeaderName comparison
+    static ref HOP_HEADERS: [HeaderName; 8] = [
+        HeaderName::from_static("connection"),
+        HeaderName::from_static("keep-alive"),
+        HeaderName::from_static("proxy-authenticate"),
+        HeaderName::from_static("proxy-authorization"),
+        HeaderName::from_static("te"),
+        HeaderName::from_static("trailers"),
+        HeaderName::from_static("transfer-encoding"),
+        HeaderName::from_static("upgrade"),
+    ];
+    
+    static ref X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
+}
 
 #[derive(Debug)]
 pub enum ProxyError {
@@ -136,24 +152,6 @@ impl From<InvalidHeaderValue> for ProxyError {
 }
 
 fn is_hop_header(name: &str) -> bool {
-    use unicase::Ascii;
-
-    // A list of the headers, using `unicase` to help us compare without
-    // worrying about the case, and `lazy_static!` to prevent reallocation
-    // of the vector.
-    lazy_static! {
-        static ref HOP_HEADERS: Vec<Ascii<&'static str>> = vec![
-            Ascii::new("Connection"),
-            Ascii::new("Keep-Alive"),
-            Ascii::new("Proxy-Authenticate"),
-            Ascii::new("Proxy-Authorization"),
-            Ascii::new("Te"),
-            Ascii::new("Trailers"),
-            Ascii::new("Transfer-Encoding"),
-            Ascii::new("Upgrade"),
-        ];
-    }
-
     HOP_HEADERS.iter().any(|h| h == &name)
 }
 
@@ -211,10 +209,8 @@ fn create_proxied_request<B>(
     *request.headers_mut() = remove_hop_headers(request.headers());
     *request.uri_mut() = uri;
 
-    let x_forwarded_for_header_name = "x-forwarded-for";
-
     // Add forwarding information in the headers
-    match request.headers_mut().entry(x_forwarded_for_header_name) {
+    match request.headers_mut().entry(&*X_FORWARDED_FOR) {
         hyper::header::Entry::Vacant(entry) => {
             entry.insert(client_ip.to_string().parse()?);
         }
