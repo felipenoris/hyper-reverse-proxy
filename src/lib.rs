@@ -22,6 +22,12 @@
 //! tokio = { version = "1", features = ["full"] }
 //! ```
 //!
+//! To enable support for connecting to downstream HTTPS servers, enable the `https` feature:
+//!
+//! ```toml
+//! hyper-reverse-proxy = { version = "0.4", features = ["https"] }
+//! ```
+//!
 //! The following example will set up a reverse proxy listening on `127.0.0.1:13900`,
 //! and will proxy these calls:
 //!
@@ -90,13 +96,29 @@
 //! ```
 //!
 
-use hyper::header::{HeaderMap, HeaderValue};
+use hyper::client::{connect::dns::GaiResolver, HttpConnector};
+use hyper::header::{HeaderMap, HeaderValue, HeaderName, HOST};
 use hyper::http::header::{InvalidHeaderValue, ToStrError};
 use hyper::http::uri::InvalidUri;
-use hyper::{Body, Client, Error, Request, Response, Uri};
+use hyper::{Body, Client, Error, Request, Response};
 use lazy_static::lazy_static;
 use std::net::IpAddr;
-use std::str::FromStr;
+
+lazy_static! {
+    // A list of the headers, using hypers actual HeaderName comparison
+    static ref HOP_HEADERS: [HeaderName; 8] = [
+        HeaderName::from_static("connection"),
+        HeaderName::from_static("keep-alive"),
+        HeaderName::from_static("proxy-authenticate"),
+        HeaderName::from_static("proxy-authorization"),
+        HeaderName::from_static("te"),
+        HeaderName::from_static("trailers"),
+        HeaderName::from_static("transfer-encoding"),
+        HeaderName::from_static("upgrade"),
+    ];
+    
+    static ref X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
+}
 
 #[derive(Debug)]
 pub enum ProxyError {
@@ -130,24 +152,6 @@ impl From<InvalidHeaderValue> for ProxyError {
 }
 
 fn is_hop_header(name: &str) -> bool {
-    use unicase::Ascii;
-
-    // A list of the headers, using `unicase` to help us compare without
-    // worrying about the case, and `lazy_static!` to prevent reallocation
-    // of the vector.
-    lazy_static! {
-        static ref HOP_HEADERS: Vec<Ascii<&'static str>> = vec![
-            Ascii::new("Connection"),
-            Ascii::new("Keep-Alive"),
-            Ascii::new("Proxy-Authenticate"),
-            Ascii::new("Proxy-Authorization"),
-            Ascii::new("Te"),
-            Ascii::new("Trailers"),
-            Ascii::new("Transfer-Encoding"),
-            Ascii::new("Upgrade"),
-        ];
-    }
-
     HOP_HEADERS.iter().any(|h| h == &name)
 }
 
@@ -164,18 +168,34 @@ fn remove_hop_headers(headers: &HeaderMap<HeaderValue>) -> HeaderMap<HeaderValue
     result
 }
 
-fn create_proxied_response<B>(mut response: Response<B>) -> Response<B> {
+fn create_proxied_response<B>(mut response: Response<B>, host: HeaderValue) -> Response<B> {
+    if host.to_str().unwrap_or("") != "" {
+        response.headers_mut().insert(HOST, host);
+    }
+
     *response.headers_mut() = remove_hop_headers(response.headers());
     response
 }
 
-fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> Result<Uri, InvalidUri> {
-    let forward_uri = match req.uri().query() {
-        Some(query) => format!("{}{}?{}", forward_url, req.uri().path(), query),
-        None => format!("{}{}", forward_url, req.uri().path()),
-    };
 
-    Uri::from_str(forward_uri.as_str())
+fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
+    if let Some(query) = req.uri().query() {
+        let mut forwarding_uri = String::with_capacity(forward_url.len() + req.uri().path().len() + query.len() + 1);
+
+        forwarding_uri.push_str(forward_url);
+        forwarding_uri.push_str(req.uri().path());
+        forwarding_uri.push('?');
+        forwarding_uri.push_str(query);
+
+        forwarding_uri
+    } else {
+        let mut forwarding_uri = String::with_capacity(forward_url.len() + req.uri().path().len());
+
+        forwarding_uri.push_str(forward_url);
+        forwarding_uri.push_str(req.uri().path());
+
+        forwarding_uri
+    }
 }
 
 fn create_proxied_request<B>(
@@ -183,13 +203,14 @@ fn create_proxied_request<B>(
     forward_url: &str,
     mut request: Request<B>,
 ) -> Result<Request<B>, ProxyError> {
-    *request.headers_mut() = remove_hop_headers(request.headers());
-    *request.uri_mut() = forward_uri(forward_url, &request)?;
+    let uri: hyper::Uri = forward_uri(forward_url, &request).parse()?;
+    let host = uri.host().map(|e|e.to_owned());
 
-    let x_forwarded_for_header_name = "x-forwarded-for";
+    *request.headers_mut() = remove_hop_headers(request.headers());
+    *request.uri_mut() = uri;
 
     // Add forwarding information in the headers
-    match request.headers_mut().entry(x_forwarded_for_header_name) {
+    match request.headers_mut().entry(&*X_FORWARDED_FOR) {
         hyper::header::Entry::Vacant(entry) => {
             entry.insert(client_ip.to_string().parse()?);
         }
@@ -200,7 +221,20 @@ fn create_proxied_request<B>(
         }
     }
 
+    request.headers_mut().insert(HOST, host.unwrap().parse::<HeaderValue>()?);
+
     Ok(request)
+}
+
+#[cfg(feature = "https")]
+fn build_client() -> Client<hyper_tls::HttpsConnector<HttpConnector<GaiResolver>>, hyper::Body> {
+    let https = hyper_tls::HttpsConnector::new();
+    Client::builder().build::<_, hyper::Body>(https)
+}
+
+#[cfg(not(feature = "https"))]
+fn build_client() -> Client<HttpConnector<GaiResolver>, hyper::Body> {
+    Client::new()
 }
 
 pub async fn call(
@@ -208,10 +242,12 @@ pub async fn call(
     forward_uri: &str,
     request: Request<Body>,
 ) -> Result<Response<Body>, ProxyError> {
-    let proxied_request = create_proxied_request(client_ip, &forward_uri, request)?;
+    let host = request.headers().get(HOST).unwrap_or(&HeaderValue::from_str("").unwrap()).to_owned();
 
-    let client = Client::new();
+    let proxied_request = create_proxied_request(client_ip, forward_uri, request)?;
+
+    let client = build_client();
     let response = client.request(proxied_request).await?;
-    let proxied_response = create_proxied_response(response);
+    let proxied_response = create_proxied_response(response, host);
     Ok(proxied_response)
 }
