@@ -178,9 +178,16 @@ fn create_proxied_response<B>(mut response: Response<B>, host: HeaderValue) -> R
 }
 
 
-fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
+fn forward_uri<B>(mut forward_url: &str, req: &Request<B>) -> String {
+    if forward_url.ends_with('/') {
+        let mut parts = forward_url.chars();
+        parts.next_back();
+        forward_url = parts.as_str();
+    }
+
     if let Some(query) = req.uri().query() {
-        let mut forwarding_uri = String::with_capacity(forward_url.len() + req.uri().path().len() + query.len() + 1);
+        let mut forwarding_uri =
+            String::with_capacity(forward_url.len() + req.uri().path().len() + query.len() + 1);
 
         forwarding_uri.push_str(forward_url);
         forwarding_uri.push_str(req.uri().path());
