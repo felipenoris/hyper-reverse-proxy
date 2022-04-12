@@ -208,24 +208,77 @@ fn create_proxied_response<B>(mut response: Response<B>) -> Response<B> {
 }
 
 fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
-    if let Some(query) = req.uri().query() {
-        let mut forwarding_uri =
-            String::with_capacity(forward_url.len() + req.uri().path().len() + query.len() + 1);
+    let split_url = forward_url.split("?").collect::<Vec<&str>>();
 
-        forwarding_uri.push_str(forward_url);
-        forwarding_uri.push_str(req.uri().path());
-        forwarding_uri.push('?');
-        forwarding_uri.push_str(query);
+    let mut base_url: &str = split_url.get(0).unwrap_or(&"");
+    let forward_url_query: &str = split_url.get(1).unwrap_or(&"");
 
-        forwarding_uri
-    } else {
-        let mut forwarding_uri = String::with_capacity(forward_url.len() + req.uri().path().len());
+    let path2 = req.uri().path();
 
-        forwarding_uri.push_str(forward_url);
-        forwarding_uri.push_str(req.uri().path());
+    if base_url.ends_with("/") {
+        let mut path1_chars = base_url.chars();
+        path1_chars.next();
 
-        forwarding_uri
+        base_url = path1_chars.as_str();
     }
+
+    let total_length = base_url.len()
+        + path2.len()
+        + 1
+        + forward_url_query.len()
+        + req.uri().query().map(|e| e.len()).unwrap_or(0);
+
+    let mut url = String::with_capacity(total_length);
+
+    url.push_str(base_url);
+    url.push_str(path2);
+
+    if !forward_url_query.is_empty() || req.uri().query().map(|e| !e.is_empty()).unwrap_or(false) {
+        url.push('?');
+        url.push_str(forward_url_query);
+
+        if forward_url_query.is_empty() {
+            url.push_str(req.uri().query().unwrap_or(""));
+        } else {
+            let forward_query_items = forward_url_query
+                .split("&")
+                .map(|el| {
+                    let parts = el.split("=").collect::<Vec<&str>>();
+                    parts[0]
+                })
+                .collect::<Vec<_>>();
+
+            let request_query_items = req
+                .uri()
+                .query()
+                .unwrap_or("")
+                .split("&")
+                .collect::<Vec<&str>>()
+                .iter()
+                .map(|el| {
+                    let parts = el.split("=").collect::<Vec<&str>>();
+                    (parts[0], if parts.len() > 1 { parts[1] } else { "" })
+                })
+                .collect::<Vec<(&str, &str)>>();
+
+            for (key, value) in request_query_items.iter() {
+                if !forward_query_items.contains(&key) {
+                    url.push_str(key);
+                    url.push('=');
+                    url.push_str(value);
+                }
+            }
+
+            if url.ends_with("&") {
+                let mut parts = url.chars();
+                parts.next_back();
+
+                url = parts.as_str().to_string();
+            }
+        }
+    }
+
+    url.parse().unwrap()
 }
 
 fn create_proxied_request<B>(
