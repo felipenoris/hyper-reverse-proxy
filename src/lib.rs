@@ -168,11 +168,7 @@ fn remove_hop_headers(headers: &HeaderMap<HeaderValue>) -> HeaderMap<HeaderValue
     result
 }
 
-fn create_proxied_response<B>(mut response: Response<B>, host: HeaderValue) -> Response<B> {
-    if host.to_str().unwrap_or("") != "" {
-        response.headers_mut().insert(HOST, host);
-    }
-
+fn create_proxied_response<B>(mut response: Response<B>) -> Response<B> {
     *response.headers_mut() = remove_hop_headers(response.headers());
     response
 }
@@ -204,10 +200,14 @@ fn create_proxied_request<B>(
     mut request: Request<B>,
 ) -> Result<Request<B>, ProxyError> {
     let uri: hyper::Uri = forward_uri(forward_url, &request).parse()?;
-    let host = uri.host().map(|e|e.to_owned());
+    
+    request
+        .headers_mut()
+        .insert(HOST, HeaderValue::from_str(uri.host().unwrap())?);
+
+    *request.uri_mut() = uri;
 
     *request.headers_mut() = remove_hop_headers(request.headers());
-    *request.uri_mut() = uri;
 
     // Add forwarding information in the headers
     match request.headers_mut().entry(&*X_FORWARDED_FOR) {
@@ -220,8 +220,6 @@ fn create_proxied_request<B>(
             entry.insert(addr.parse()?);
         }
     }
-
-    request.headers_mut().insert(HOST, host.unwrap().parse::<HeaderValue>()?);
 
     Ok(request)
 }
@@ -242,12 +240,10 @@ pub async fn call(
     forward_uri: &str,
     request: Request<Body>,
 ) -> Result<Response<Body>, ProxyError> {
-    let host = request.headers().get(HOST).unwrap_or(&HeaderValue::from_str("").unwrap()).to_owned();
-
     let proxied_request = create_proxied_request(client_ip, forward_uri, request)?;
 
     let client = build_client();
     let response = client.request(proxied_request).await?;
-    let proxied_response = create_proxied_response(response, host);
+    let proxied_response = create_proxied_response(response);
     Ok(proxied_response)
 }
