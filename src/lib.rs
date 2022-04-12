@@ -103,7 +103,7 @@ extern crate test;
 use hyper_trust_dns::TrustDnsResolver;
 
 #[cfg(not(feature = "https"))]
-use hyper::client::{connect::dns::GaiResolver, HttpConnector};
+use hyper::client::HttpConnector;
 
 use hyper::header::{HeaderMap, HeaderName, HeaderValue, HOST};
 use hyper::http::header::{InvalidHeaderValue, ToStrError};
@@ -130,6 +130,24 @@ lazy_static! {
     ];
 
     static ref X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
+}
+
+#[cfg(feature = "https")]
+lazy_static! {
+    static ref CLIENT: Client<hyper_trust_dns::RustlsHttpsConnector, hyper::Body> = {
+        #[cfg(feature = "native-cert-store")]
+        let https = TrustDnsResolver::default().into_rustls_native_https_connector();
+
+        #[cfg(not(feature = "native-cert-store"))]
+        let https = TrustDnsResolver::default().into_rustls_webpki_https_connector();
+
+        Client::builder().build::<_, hyper::Body>(https)
+    };
+}
+
+#[cfg(not(feature = "https"))]
+lazy_static! {
+    static ref CLIENT: Client<HttpConnector> = Client::new();
 }
 
 #[derive(Debug)]
@@ -240,29 +258,18 @@ fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
         if forward_url_query.is_empty() {
             url.push_str(req.uri().query().unwrap_or(""));
         } else {
-            let request_query_items = req
-                .uri()
-                .query()
-                .unwrap_or("")
-                .split('&')
-                .collect::<Vec<&str>>()
-                .iter()
-                .map(|el| {
-                    let parts = el.split('=').collect::<Vec<&str>>();
-                    (parts[0], if parts.len() > 1 { parts[1] } else { "" })
-                })
-                .collect::<Vec<(&str, &str)>>();
+            let request_query_items = req.uri().query().unwrap_or("").split('&').map(|el| {
+                let parts = el.split('=').collect::<Vec<&str>>();
+                (parts[0], if parts.len() > 1 { parts[1] } else { "" })
+            });
 
-            let forward_query_items = forward_url_query
-                .split('&')
-                .map(|el| {
-                    let parts = el.split('=').collect::<Vec<&str>>();
-                    parts[0]
-                })
-                .collect::<Vec<_>>();
+            let mut forward_query_items = forward_url_query.split('&').map(|el| {
+                let parts = el.split('=').collect::<Vec<&str>>();
+                parts[0]
+            });
 
-            for (key, value) in request_query_items.iter() {
-                if !forward_query_items.contains(key) {
+            for (key, value) in request_query_items {
+                if !forward_query_items.any(|e| e == key) {
                     url.push_str(key);
                     url.push('=');
                     url.push_str(value);
@@ -346,22 +353,6 @@ fn create_proxied_request<B>(
     Ok(request)
 }
 
-#[cfg(feature = "https")]
-fn build_client() -> Client<hyper_trust_dns::RustlsHttpsConnector, hyper::Body> {
-    #[cfg(feature = "native-cert-store")]
-    let https = TrustDnsResolver::default().into_rustls_native_https_connector();
-
-    #[cfg(not(feature = "native-cert-store"))]
-    let https = TrustDnsResolver::default().into_rustls_webpki_https_connector();
-
-    Client::builder().build::<_, hyper::Body>(https)
-}
-
-#[cfg(not(feature = "https"))]
-fn build_client() -> Client<HttpConnector<GaiResolver>, hyper::Body> {
-    Client::new()
-}
-
 pub async fn call(
     client_ip: IpAddr,
     forward_uri: &str,
@@ -369,8 +360,7 @@ pub async fn call(
 ) -> Result<Response<Body>, ProxyError> {
     let proxied_request = create_proxied_request(client_ip, forward_uri, request)?;
 
-    let client = build_client();
-    let response = client.request(proxied_request).await?;
+    let response = CLIENT.request(proxied_request).await?;
     let proxied_response = create_proxied_response(response);
     Ok(proxied_response)
 }
