@@ -112,10 +112,11 @@ lazy_static! {
     static ref CONNECTION_HEADER: HeaderName = HeaderName::from_static("connection");
     static ref UPGRADE_HEADER: HeaderName = HeaderName::from_static("upgrade");
     // A list of the headers, using hypers actual HeaderName comparison
-    static ref HOP_HEADERS: [HeaderName; 8] = [
+    static ref HOP_HEADERS: [HeaderName; 9] = [
         CONNECTION_HEADER.clone(),
         TE_HEADER.clone(),
         HeaderName::from_static("keep-alive"),
+        HeaderName::from_static("proxy-connection"),
         HeaderName::from_static("proxy-authenticate"),
         HeaderName::from_static("proxy-authorization"),
         HeaderName::from_static("trailer"),
