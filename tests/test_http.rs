@@ -1,49 +1,68 @@
+use hyper::server::conn::AddrStream;
+use hyper::service::{make_service_fn, service_fn};
+use hyper::{Body, Client, Request, Response, Server, StatusCode, Uri};
+use std::convert::Infallible;
+use std::net::{IpAddr, SocketAddr};
+use test_context::test_context;
+use test_context::AsyncTestContext;
 use tokio::sync::oneshot::Sender;
 use tokio::task::JoinHandle;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::server::conn::AddrStream;
-use std::convert::Infallible;
-use hyper::{Uri, Client, Request, Body, Server, Response, StatusCode};
-use tokiotest_httpserver::{HttpTestContext, take_port};
-use test_context::AsyncTestContext;
-use test_context::test_context;
-use std::net::{IpAddr, SocketAddr};
 use tokiotest_httpserver::handler::HandlerBuilder;
+use tokiotest_httpserver::{take_port, HttpTestContext};
 
 struct ProxyTestContext {
     sender: Sender<()>,
     proxy_handler: JoinHandle<Result<(), hyper::Error>>,
     http_back: HttpTestContext,
-    port: u16
+    port: u16,
 }
 
 #[test_context(ProxyTestContext)]
 #[tokio::test]
 async fn test_get_error_500(ctx: &mut ProxyTestContext) {
-    let resp = Client::new().get(ctx.uri("/500")).await.unwrap();
+    let client = Client::new();
+    let resp = client
+        .request(
+            Request::builder()
+                .header("keep-alive", "treu")
+                .method("GET")
+                .uri(ctx.uri("/500"))
+                .body(Body::from(""))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     assert_eq!(500, resp.status());
 }
 
 #[test_context(ProxyTestContext)]
 #[tokio::test]
 async fn test_get(ctx: &mut ProxyTestContext) {
-    ctx.http_back.add(HandlerBuilder::new("/foo").status_code(StatusCode::OK).build());
+    ctx.http_back.add(
+        HandlerBuilder::new("/foo")
+            .status_code(StatusCode::OK)
+            .build(),
+    );
     let resp = Client::new().get(ctx.uri("/foo")).await.unwrap();
     assert_eq!(200, resp.status());
 }
 
-async fn handle(client_ip: IpAddr, req: Request<Body>, backend_port: u16)  -> Result<Response<Body>, Infallible>  {
-    match hyper_reverse_proxy::call(client_ip,
-                                    format!("http://127.0.0.1:{}", backend_port).as_str(),
-                                    req).await {
-        Ok(response) => {Ok(response)}
-        Err(_) => {Ok(Response::builder()
-                              .status(502)
-                              .body(Body::empty())
-                              .unwrap())}
+async fn handle(
+    client_ip: IpAddr,
+    req: Request<Body>,
+    backend_port: u16,
+) -> Result<Response<Body>, Infallible> {
+    match hyper_reverse_proxy::call(
+        client_ip,
+        format!("http://127.0.0.1:{}", backend_port).as_str(),
+        req,
+    )
+    .await
+    {
+        Ok(response) => Ok(response),
+        Err(_) => Ok(Response::builder().status(502).body(Body::empty()).unwrap()),
     }
 }
-
 
 #[async_trait::async_trait]
 impl AsyncTestContext for ProxyTestContext {
@@ -60,13 +79,17 @@ impl AsyncTestContext for ProxyTestContext {
         });
         let port = take_port();
         let addr = SocketAddr::new("127.0.0.1".parse().unwrap(), port);
-        let server = Server::bind(&addr).serve(make_svc).with_graceful_shutdown(async { receiver.await.ok(); });
+        let server = Server::bind(&addr)
+            .serve(make_svc)
+            .with_graceful_shutdown(async {
+                receiver.await.ok();
+            });
         let proxy_handler = tokio::spawn(server);
         ProxyTestContext {
             sender,
             proxy_handler,
             http_back,
-            port
+            port,
         }
     }
     async fn teardown(self) {
@@ -77,6 +100,8 @@ impl AsyncTestContext for ProxyTestContext {
 }
 impl ProxyTestContext {
     pub fn uri(&self, path: &str) -> Uri {
-        format!("http://{}:{}{}", "localhost", self.port, path).parse::<Uri>().unwrap()
+        format!("http://{}:{}{}", "localhost", self.port, path)
+            .parse::<Uri>()
+            .unwrap()
     }
 }
