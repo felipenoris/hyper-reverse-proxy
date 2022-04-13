@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "master"
+      - "main"
+      - "develop"
+      - "*"
+  pull_request:
+    branches:
+      - "*"
+
+jobs:
+  build-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - node: ubuntu-latest
+          - node: windows-latest
+          - node: macos-latest
+    runs-on: ${{ matrix.config.node }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2.4.0
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - uses: Swatinem/rust-cache@v1.3.0
+
+      - name: Install tooling
+        run: cargo install cargo-all-features
+
+      - name: Build Dev
+        run: cargo build-all-features
+
+      - name: Build Release
+        run: cargo build-all-features --release
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+
+      - name: Test
+        run: cargo test
+
+      - name: Bench
+        run: cargo bench  --all-features
+
+  build-cross:
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          # ubuntu aarch64
+          - node: ubuntu-latest
+            arch: aarch64-unknown-linux-gnu
+          - node: ubuntu-latest
+            arch: aarch64-unknown-linux-musl
+
+          # ubuntu x86
+          - node: ubuntu-latest
+            arch: x86_64-unknown-linux-gnu
+          - node: ubuntu-latest
+            arch: x86_64-unknown-linux-musl
+          
+          # apple aarch64
+          - node: macos-latest
+            arch: aarch64-apple-darwin
+
+    runs-on: ${{ matrix.config.node }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2.4.0
+
+      - uses: docker-practice/actions-setup-docker@master
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+      
+      - name: Install
+        run: cargo install cross
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      
+      - name: Build Dev
+        run: cross build --target ${{ matrix.config.arch }} --lib
+      
+      - name: Build Release
+        run: cross build --target ${{ matrix.config.arch }} --release --lib
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      
+      - name: Test Dev
+        run: cross test --target ${{ matrix.config.arch }}  --lib
