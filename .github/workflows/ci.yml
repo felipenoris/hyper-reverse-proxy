@@ -6,7 +6,6 @@ on:
       - "master"
       - "main"
       - "develop"
-      - "*"
   pull_request:
     branches:
       - "*"
@@ -47,7 +46,7 @@ jobs:
           override: true
 
       - name: Test
-        run: cargo test
+        run: cargo  test-all-features
 
       - name: Bench
         run: cargo bench  --all-features
@@ -91,6 +90,14 @@ jobs:
           toolchain: stable
           override: true
       
+      - name:  Install ssl (linux)
+        if: runner.os == 'Linux'
+        run:  sudo apt update -y && sudo apt upgrade -y && sudo apt install libssl-dev 
+      
+      - name: Install ssl (macOS)
+        if: runner.os == 'macOS'
+        run: brew install openssl
+
       - name: Build Dev
         run: cross build --target ${{ matrix.config.arch }} --lib
       
