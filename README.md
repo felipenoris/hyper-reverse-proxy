@@ -95,3 +95,35 @@ async fn main() {
     }
 }
 ```
+
+### Security
+
+Handling outgoing requests can be a security nightmare. This crate includes some features to reduce some of the risks. Everthing uses `rustls` benieth, a rust implementation for tls, faster and more secure as `openssl`
+
+#### HTTPS
+
+By default the `https` feature is enabled which will allow you to request resources over https. This does not limit to only `https` traffic, if you would like so add the feature `https-only` to your `Cargo.toml` for this crate.
+
+#### TLS 1.2
+
+By default `tls 1.2` is disabled in favor of `tls 1.3`. As not yet all services support it `tls 1.2` can be enabled via the `tls-1-2` feature.
+
+#### DNSSEC
+
+By default if you enable `https` (which is enabled by default) `dnssec` is enabled.
+
+#### HTTP/2
+
+While `http/3` might be just around the corner. `http/2` support can be enabled using the `http2` feature.
+
+#### DoT & DoH
+
+By default none of them are enabled. If you would like to enabled them, you can do so using the features `doh` and `dot`.
+
+Recommendations:
+ - If you need to monitor network activities in relation to accessed ports, use `dot`
+ - If you are out in the wild and have no need to monitor based on ports, use `doh` as it will blend in with other `https` traffic
+
+It is highly recommended to use one of them.
+
+> Currently only includes dns queries as `esni` or `ech` is still in draft by the `ietf`
