@@ -396,8 +396,7 @@ mod tests {
             *response.headers_mut().unwrap() = headers_map.clone();
 
             super::create_proxied_response(
-                response.body(()).unwrap(),
-                hyper::header::HeaderValue::from_static("me"),
+                response.body(()).unwrap()
             );
         });
     }
