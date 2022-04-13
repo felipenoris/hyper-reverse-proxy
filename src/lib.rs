@@ -215,9 +215,15 @@ fn create_proxied_request<B>(
             entry.insert(client_ip.to_string().parse()?);
         }
 
-        hyper::header::Entry::Occupied(mut entry) => {
-            let addr = format!("{}, {}", entry.get().to_str()?, client_ip);
-            entry.insert(addr.parse()?);
+        hyper::header::Entry::Occupied(entry) => {
+            let client_ip_str = client_ip.to_string();
+            let mut addr =
+                String::with_capacity(entry.get().as_bytes().len() + 2 + client_ip_str.len());
+
+            addr.push_str(std::str::from_utf8(entry.get().as_bytes()).unwrap());
+            addr.push(',');
+            addr.push(' ');
+            addr.push_str(&client_ip_str);
         }
     }
 
