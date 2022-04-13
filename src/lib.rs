@@ -99,11 +99,16 @@
 #[cfg(all(not(stable), test))]
 extern crate test;
 
+#[cfg(feature = "https")]
+use hyper_trust_dns::TrustDnsResolver;
+
+#[cfg(not(feature = "https"))]
 use hyper::client::{connect::dns::GaiResolver, HttpConnector};
-use hyper::header::{HeaderName, HeaderValue, HOST};
+
+use hyper::header::{HeaderMap, HeaderName, HeaderValue, HOST};
 use hyper::http::header::{InvalidHeaderValue, ToStrError};
 use hyper::http::uri::InvalidUri;
-use hyper::{Body, Client, Error, HeaderMap, Request, Response};
+use hyper::{Body, Client, Error, Request, Response};
 use lazy_static::lazy_static;
 use std::net::IpAddr;
 
@@ -242,6 +247,7 @@ fn create_proxied_request<B>(
     let upgrade_type = get_upgrade_type(request.headers());
 
     let uri: hyper::Uri = forward_uri(forward_url, &request).parse()?;
+    
     request
         .headers_mut()
         .insert(HOST, HeaderValue::from_str(uri.host().unwrap())?);
@@ -288,8 +294,13 @@ fn create_proxied_request<B>(
 }
 
 #[cfg(feature = "https")]
-fn build_client() -> Client<hyper_tls::HttpsConnector<HttpConnector<GaiResolver>>, hyper::Body> {
-    let https = hyper_tls::HttpsConnector::new();
+fn build_client() -> Client<hyper_trust_dns::RustlsHttpsConnector, hyper::Body> {
+    #[cfg(feature = "native-cert-store")]
+    let https = TrustDnsResolver::default().into_rustls_native_https_connector();
+
+    #[cfg(not(feature = "native-cert-store"))]
+    let https = TrustDnsResolver::default().into_rustls_webpki_https_connector();
+
     Client::builder().build::<_, hyper::Body>(https)
 }
 
