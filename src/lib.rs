@@ -395,9 +395,7 @@ mod tests {
 
             *response.headers_mut().unwrap() = headers_map.clone();
 
-            super::create_proxied_response(
-                response.body(()).unwrap()
-            );
+            super::create_proxied_response(response.body(()).unwrap());
         });
     }
 
