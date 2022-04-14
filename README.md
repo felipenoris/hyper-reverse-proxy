@@ -1,10 +1,18 @@
 
 # hyper-reverse-proxy
 
-[![Build Status](https://travis-ci.org/brendanzab/hyper-reverse-proxy.svg?branch=master)](https://travis-ci.org/brendanzab/hyper-reverse-proxy)
-[![Documentation](https://docs.rs/hyper-reverse-proxy/badge.svg)](https://docs.rs/hyper-reverse-proxy)
-[![Version](https://img.shields.io/crates/v/hyper-reverse-proxy.svg)](https://crates.io/crates/hyper-reverse-proxy)
-[![License](https://img.shields.io/crates/l/hyper-reverse-proxy.svg)](https://github.com/brendanzab/hyper-reverse-proxy/blob/master/LICENSE)
+[![License][license-img]](LICENSE)
+[![CI][ci-img]][ci-url]
+[![docs][docs-img]][docs-url]
+[![version][version-img]][version-url]
+
+[license-img]: https://img.shields.io/crates/l/hyper-reverse-proxy.svg
+[ci-img]: https://github.com/felipenoris/hyper-reverse-proxy/workflows/CI/badge.svg
+[ci-url]: https://github.com/felipenoris/hyper-reverse-proxy/actions?query=workflow%3ACI
+[docs-img]: https://docs.rs/hyper-reverse-proxy/badge.svg
+[docs-url]: https://docs.rs/hyper-reverse-proxy
+[version-img]: https://img.shields.io/crates/v/hyper-reverse-proxy.svg
+[version-url]: https://crates.io/crates/hyper-reverse-proxy
 
 A simple reverse proxy, to be used with [Hyper].
 
