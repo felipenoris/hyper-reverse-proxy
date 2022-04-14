@@ -208,14 +208,14 @@ fn create_proxied_response<B>(mut response: Response<B>) -> Response<B> {
 }
 
 fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
-    let split_url = forward_url.split("?").collect::<Vec<&str>>();
+    let split_url = forward_url.split('?').collect::<Vec<&str>>();
 
     let mut base_url: &str = split_url.get(0).unwrap_or(&"");
     let forward_url_query: &str = split_url.get(1).unwrap_or(&"");
 
     let path2 = req.uri().path();
 
-    if base_url.ends_with("/") {
+    if base_url.ends_with('/') {
         let mut path1_chars = base_url.chars();
         path1_chars.next();
 
@@ -241,9 +241,9 @@ fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
             url.push_str(req.uri().query().unwrap_or(""));
         } else {
             let forward_query_items = forward_url_query
-                .split("&")
+                .split('&')
                 .map(|el| {
-                    let parts = el.split("=").collect::<Vec<&str>>();
+                    let parts = el.split('=').collect::<Vec<&str>>();
                     parts[0]
                 })
                 .collect::<Vec<_>>();
@@ -252,24 +252,24 @@ fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
                 .uri()
                 .query()
                 .unwrap_or("")
-                .split("&")
+                .split('&')
                 .collect::<Vec<&str>>()
                 .iter()
                 .map(|el| {
-                    let parts = el.split("=").collect::<Vec<&str>>();
+                    let parts = el.split('=').collect::<Vec<&str>>();
                     (parts[0], if parts.len() > 1 { parts[1] } else { "" })
                 })
                 .collect::<Vec<(&str, &str)>>();
 
             for (key, value) in request_query_items.iter() {
-                if !forward_query_items.contains(&key) {
+                if !forward_query_items.contains(key) {
                     url.push_str(key);
                     url.push('=');
                     url.push_str(value);
                 }
             }
 
-            if url.ends_with("&") {
+            if url.ends_with('&') {
                 let mut parts = url.chars();
                 parts.next_back();
 
