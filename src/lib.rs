@@ -171,7 +171,7 @@ fn get_upgrade_type(headers: &HeaderMap) -> Option<String> {
             value
                 .to_str()
                 .unwrap()
-                .split(",")
+                .split(',')
                 .any(|e| e.to_lowercase() == "upgrade")
         })
         .unwrap_or(false)
@@ -187,7 +187,7 @@ fn remove_connection_headers(headers: &mut HeaderMap) {
     if headers.get(&*CONNECTION_HEADER).is_some() {
         let value = headers.get(&*CONNECTION_HEADER).map(|e| e.clone()).unwrap();
 
-        for name in value.to_str().unwrap().split(",") {
+        for name in value.to_str().unwrap().split(',') {
             if !name.trim().is_empty() {
                 headers.remove(name.trim());
             }
@@ -235,7 +235,7 @@ fn create_proxied_request<B>(
             value
                 .to_str()
                 .unwrap()
-                .split(",")
+                .split(',')
                 .any(|e| e.to_lowercase() == "trailers")
         })
         .unwrap_or(false);
