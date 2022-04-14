@@ -240,14 +240,6 @@ fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
         if forward_url_query.is_empty() {
             url.push_str(req.uri().query().unwrap_or(""));
         } else {
-            let forward_query_items = forward_url_query
-                .split('&')
-                .map(|el| {
-                    let parts = el.split('=').collect::<Vec<&str>>();
-                    parts[0]
-                })
-                .collect::<Vec<_>>();
-
             let request_query_items = req
                 .uri()
                 .query()
@@ -260,6 +252,14 @@ fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
                     (parts[0], if parts.len() > 1 { parts[1] } else { "" })
                 })
                 .collect::<Vec<(&str, &str)>>();
+
+            let forward_query_items = forward_url_query
+                .split('&')
+                .map(|el| {
+                    let parts = el.split('=').collect::<Vec<&str>>();
+                    parts[0]
+                })
+                .collect::<Vec<_>>();
 
             for (key, value) in request_query_items.iter() {
                 if !forward_query_items.contains(key) {
