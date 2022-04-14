@@ -185,7 +185,7 @@ fn get_upgrade_type(headers: &HeaderMap) -> Option<String> {
 
 fn remove_connection_headers(headers: &mut HeaderMap) {
     if headers.get(&*CONNECTION_HEADER).is_some() {
-        let value = headers.get(&*CONNECTION_HEADER).map(|e| e.clone()).unwrap();
+        let value = headers.get(&*CONNECTION_HEADER).cloned().unwrap();
 
         for name in value.to_str().unwrap().split(',') {
             if !name.trim().is_empty() {
