@@ -300,7 +300,7 @@ fn create_proxied_request<B>(
     let upgrade_type = get_upgrade_type(request.headers());
 
     let uri: hyper::Uri = forward_uri(forward_url, &request).parse()?;
-    
+
     request
         .headers_mut()
         .insert(HOST, HeaderValue::from_str(uri.host().unwrap())?);
