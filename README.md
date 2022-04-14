@@ -8,7 +8,7 @@
 
 [license-img]: https://img.shields.io/crates/l/hyper-reverse-proxy.svg
 [ci-img]: https://github.com/felipenoris/hyper-reverse-proxy/workflows/CI/badge.svg
-[ci-url]: https://github.com/felipenoris/hyper-reverse-proxy/actions?query=workflow%3ACI
+[ci-url]: https://github.com/felipenoris/hyper-reverse-proxy/actions/workflows/main.yml
 [docs-img]: https://docs.rs/hyper-reverse-proxy/badge.svg
 [docs-url]: https://docs.rs/hyper-reverse-proxy
 [version-img]: https://img.shields.io/crates/v/hyper-reverse-proxy.svg
