@@ -1,0 +1,81 @@
+on: [push, pull_request]
+
+name: CI
+
+jobs:
+  test:
+    name: Test Suite
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - node: ubuntu-latest
+          - node: windows-latest
+          - node: macos-latest
+    runs-on: ${{ matrix.config.node }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-all-features
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test-all-features
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test-all-features
+          args: --release
+
+  # cargo all-features currently does not support cross
+  test-cross:
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          # ubuntu aarch64
+          - node: ubuntu-latest
+            arch: aarch64-unknown-linux-gnu
+          - node: ubuntu-latest
+            arch: aarch64-unknown-linux-musl
+
+          # ubuntu x86
+          - node: ubuntu-latest
+            arch: x86_64-unknown-linux-gnu
+          - node: ubuntu-latest
+            arch: x86_64-unknown-linux-musl
+
+          # apple aarch64
+          - node: macos-latest
+            arch: aarch64-apple-darwin
+
+    runs-on: ${{ matrix.config.node }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2.4.0
+
+      - uses: docker-practice/actions-setup-docker@master
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cross
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Test Dev
+        run: cross test --target ${{ matrix.config.arch }}  --lib
+
+      - name: Test Release
+        run: cross test --target ${{ matrix.config.arch }}  --release  --lib
