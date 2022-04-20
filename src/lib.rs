@@ -39,50 +39,63 @@
 //!
 //! ```rust,no_run
 //! use hyper::server::conn::AddrStream;
+//! use hyper::service::{make_service_fn, service_fn};
 //! use hyper::{Body, Request, Response, Server, StatusCode};
-//! use hyper::service::{service_fn, make_service_fn};
-//! use std::{convert::Infallible, net::SocketAddr};
+//! use hyper_reverse_proxy::ReverseProxy;
+//! use hyper_trust_dns::{RustlsHttpsConnector, TrustDnsResolver};
 //! use std::net::IpAddr;
+//! use std::{convert::Infallible, net::SocketAddr};
 //!
-//! fn debug_request(req: Request<Body>) -> Result<Response<Body>, Infallible>  {
+//! lazy_static::lazy_static! {
+//!     static ref  PROXY_CLIENT: ReverseProxy<RustlsHttpsConnector> = {
+//!         ReverseProxy::new(
+//!             hyper::Client::builder().build::<_, hyper::Body>(TrustDnsResolver::default().into_rustls_webpki_https_connector()),
+//!         )
+//!     };
+//! }
+//!
+//! fn debug_request(req: &Request<Body>) -> Result<Response<Body>, Infallible> {
 //!     let body_str = format!("{:?}", req);
 //!     Ok(Response::new(Body::from(body_str)))
 //! }
 //!
 //! async fn handle(client_ip: IpAddr, req: Request<Body>) -> Result<Response<Body>, Infallible> {
 //!     if req.uri().path().starts_with("/target/first") {
-//!         // will forward requests to port 13901
-//!         match hyper_reverse_proxy::call(client_ip, "http://127.0.0.1:13901", req).await {
-//!             Ok(response) => {Ok(response)}
-//!             Err(_error) => {Ok(Response::builder()
-//!                                   .status(StatusCode::INTERNAL_SERVER_ERROR)
-//!                                   .body(Body::empty())
-//!                                   .unwrap())}
+//!         match PROXY_CLIENT.call(client_ip, "http://127.0.0.1:13901", req)
+//!             .await
+//!         {
+//!             Ok(response) => {
+//!                 Ok(response)
+//!             },
+//!             Err(_error) => {
+//!                 Ok(Response::builder()
+//!                 .status(StatusCode::INTERNAL_SERVER_ERROR)
+//!                 .body(Body::empty())
+//!                 .unwrap())},
 //!         }
 //!     } else if req.uri().path().starts_with("/target/second") {
-//!         // will forward requests to port 13902
-//!         match hyper_reverse_proxy::call(client_ip, "http://127.0.0.1:13902", req).await {
-//!             Ok(response) => {Ok(response)}
-//!             Err(_error) => {Ok(Response::builder()
-//!                                   .status(StatusCode::INTERNAL_SERVER_ERROR)
-//!                                   .body(Body::empty())
-//!                                   .unwrap())}
+//!         match PROXY_CLIENT.call(client_ip, "http://127.0.0.1:13902", req)
+//!             .await
+//!         {
+//!             Ok(response) => Ok(response),
+//!             Err(_error) => Ok(Response::builder()
+//!                 .status(StatusCode::INTERNAL_SERVER_ERROR)
+//!                 .body(Body::empty())
+//!                 .unwrap()),
 //!         }
 //!     } else {
-//!         debug_request(req)
+//!         debug_request(&req)
 //!     }
 //! }
 //!
 //! #[tokio::main]
 //! async fn main() {
 //!     let bind_addr = "127.0.0.1:8000";
-//!     let addr:SocketAddr = bind_addr.parse().expect("Could not parse ip:port.");
+//!     let addr: SocketAddr = bind_addr.parse().expect("Could not parse ip:port.");
 //!
 //!     let make_svc = make_service_fn(|conn: &AddrStream| {
 //!         let remote_addr = conn.remote_addr().ip();
-//!         async move {
-//!             Ok::<_, Infallible>(service_fn(move |req| handle(remote_addr, req)))
-//!         }
+//!         async move { Ok::<_, Infallible>(service_fn(move |req| handle(remote_addr, req))) }
 //!     });
 //!
 //!     let server = Server::bind(&addr).serve(make_svc);
@@ -93,17 +106,12 @@
 //!         eprintln!("server error: {}", e);
 //!     }
 //! }
+//!
 //! ```
 #![cfg_attr(all(not(stable), test), feature(test))]
 
 #[cfg(all(not(stable), test))]
 extern crate test;
-
-#[cfg(feature = "https")]
-use hyper_trust_dns::TrustDnsResolver;
-
-#[cfg(not(feature = "https"))]
-use hyper::client::HttpConnector;
 
 use hyper::header::{HeaderMap, HeaderName, HeaderValue, HOST};
 use hyper::http::header::{InvalidHeaderValue, ToStrError};
@@ -130,24 +138,6 @@ lazy_static! {
     ];
 
     static ref X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
-}
-
-#[cfg(feature = "https")]
-lazy_static! {
-    static ref CLIENT: Client<hyper_trust_dns::RustlsHttpsConnector, hyper::Body> = {
-        #[cfg(feature = "native-cert-store")]
-        let https = TrustDnsResolver::default().into_rustls_native_https_connector();
-
-        #[cfg(not(feature = "native-cert-store"))]
-        let https = TrustDnsResolver::default().into_rustls_webpki_https_connector();
-
-        Client::builder().build::<_, hyper::Body>(https)
-    };
-}
-
-#[cfg(not(feature = "https"))]
-lazy_static! {
-    static ref CLIENT: Client<HttpConnector> = Client::new();
 }
 
 #[derive(Debug)]
@@ -235,7 +225,7 @@ fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
 
     if base_url.ends_with('/') {
         let mut path1_chars = base_url.chars();
-        path1_chars.next();
+        path1_chars.next_back();
 
         base_url = path1_chars.as_str();
     }
@@ -263,13 +253,17 @@ fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
                 (parts[0], if parts.len() > 1 { parts[1] } else { "" })
             });
 
-            let mut forward_query_items = forward_url_query.split('&').map(|el| {
-                let parts = el.split('=').collect::<Vec<&str>>();
-                parts[0]
-            });
+            let forward_query_items = forward_url_query
+                .split('&')
+                .map(|el| {
+                    let parts = el.split('=').collect::<Vec<&str>>();
+                    parts[0]
+                })
+                .collect::<Vec<_>>();
 
             for (key, value) in request_query_items {
-                if !forward_query_items.any(|e| e == key) {
+                if !forward_query_items.iter().any(|e| e == &key) {
+                    url.push('&');
                     url.push_str(key);
                     url.push('=');
                     url.push_str(value);
@@ -353,22 +347,42 @@ fn create_proxied_request<B>(
     Ok(request)
 }
 
-pub async fn call(
+pub async fn call<'a, T: hyper::client::connect::Connect + Clone + Send + Sync + 'static>(
     client_ip: IpAddr,
     forward_uri: &str,
     request: Request<Body>,
+    client: &'a Client<T>,
 ) -> Result<Response<Body>, ProxyError> {
     let proxied_request = create_proxied_request(client_ip, forward_uri, request)?;
 
-    let response = CLIENT.request(proxied_request).await?;
+    let response = client.request(proxied_request).await?;
     let proxied_response = create_proxied_response(response);
     Ok(proxied_response)
+}
+
+pub struct ReverseProxy<T: hyper::client::connect::Connect + Clone + Send + Sync + 'static> {
+    client: Client<T>,
+}
+
+impl<T: hyper::client::connect::Connect + Clone + Send + Sync + 'static> ReverseProxy<T> {
+    pub fn new(client: Client<T>) -> Self {
+        Self { client }
+    }
+
+    pub async fn call(
+        &self,
+        client_ip: IpAddr,
+        forward_uri: &str,
+        request: Request<Body>,
+    ) -> Result<Response<Body>, ProxyError> {
+        call::<T>(client_ip, forward_uri, request, &self.client).await
+    }
 }
 
 #[cfg(all(not(stable), test))]
 mod tests {
     use hyper::header::HeaderName;
-    use hyper::Uri;
+    use hyper::{Client, Uri};
     use hyper::{HeaderMap, Request, Response};
     use rand::distributions::Alphanumeric;
     use rand::prelude::*;
@@ -423,6 +437,8 @@ mod tests {
 
         let client_ip = std::net::IpAddr::from(Ipv4Addr::from_str("0.0.0.0").unwrap());
 
+        let client = Client::new();
+
         b.iter(|| {
             rt.block_on(async {
                 let mut request = Request::builder().uri(uri.clone());
@@ -433,6 +449,7 @@ mod tests {
                     client_ip,
                     forward_url,
                     request.body(hyper::Body::from("")).unwrap(),
+                    &client,
                 )
                 .await
                 .unwrap();
