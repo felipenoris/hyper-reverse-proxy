@@ -1,6 +1,9 @@
+use hyper::client::connect::dns::GaiResolver;
+use hyper::client::HttpConnector;
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Client, Request, Response, Server, StatusCode, Uri};
+use hyper_reverse_proxy::ReverseProxy;
 use std::convert::Infallible;
 use std::net::{IpAddr, SocketAddr};
 use test_context::test_context;
@@ -9,6 +12,14 @@ use tokio::sync::oneshot::Sender;
 use tokio::task::JoinHandle;
 use tokiotest_httpserver::handler::HandlerBuilder;
 use tokiotest_httpserver::{take_port, HttpTestContext};
+
+lazy_static::lazy_static! {
+    static ref  PROXY_CLIENT: ReverseProxy<HttpConnector<GaiResolver>> = {
+        ReverseProxy::new(
+            hyper::Client::new(),
+        )
+    };
+}
 
 struct ProxyTestContext {
     sender: Sender<()>,
@@ -52,12 +63,13 @@ async fn handle(
     req: Request<Body>,
     backend_port: u16,
 ) -> Result<Response<Body>, Infallible> {
-    match hyper_reverse_proxy::call(
-        client_ip,
-        format!("http://127.0.0.1:{}", backend_port).as_str(),
-        req,
-    )
-    .await
+    match PROXY_CLIENT
+        .call(
+            client_ip,
+            format!("http://127.0.0.1:{}", backend_port).as_str(),
+            req,
+        )
+        .await
     {
         Ok(response) => Ok(response),
         Err(_) => Ok(Response::builder().status(502).body(Body::empty()).unwrap()),
@@ -65,11 +77,12 @@ async fn handle(
 }
 
 #[async_trait::async_trait]
-impl AsyncTestContext for ProxyTestContext {
+impl<'a> AsyncTestContext for ProxyTestContext {
     async fn setup() -> ProxyTestContext {
         let http_back: HttpTestContext = AsyncTestContext::setup().await;
         let (sender, receiver) = tokio::sync::oneshot::channel::<()>();
         let bp_to_move = http_back.port;
+
         let make_svc = make_service_fn(move |conn: &AddrStream| {
             let remote_addr = conn.remote_addr().ip();
             let back_port = bp_to_move;
