@@ -110,6 +110,9 @@
 //! ```
 #![cfg_attr(all(not(stable), test), feature(test))]
 
+#[macro_use]
+extern crate tracing;
+
 #[cfg(all(not(stable), test))]
 extern crate test;
 
@@ -172,6 +175,8 @@ impl From<InvalidHeaderValue> for ProxyError {
 }
 
 fn remove_hop_headers(headers: &mut HeaderMap) {
+    debug!("Removing hop headers");
+
     for header in &*HOP_HEADERS {
         headers.remove(header);
     }
@@ -190,14 +195,22 @@ fn get_upgrade_type(headers: &HeaderMap) -> Option<String> {
         .unwrap_or(false)
     {
         if let Some(upgrade_value) = headers.get(&*UPGRADE_HEADER) {
+            debug!(
+                "Found upgrade header with value: {}",
+                upgrade_value.to_str().unwrap().to_owned()
+            );
+
             return Some(upgrade_value.to_str().unwrap().to_owned());
         }
     }
+
     None
 }
 
 fn remove_connection_headers(headers: &mut HeaderMap) {
     if headers.get(&*CONNECTION_HEADER).is_some() {
+        debug!("Removing connection headers");
+
         let value = headers.get(&*CONNECTION_HEADER).cloned().unwrap();
 
         for name in value.to_str().unwrap().split(',') {
@@ -209,6 +222,8 @@ fn remove_connection_headers(headers: &mut HeaderMap) {
 }
 
 fn create_proxied_response<B>(mut response: Response<B>) -> Response<B> {
+    info!("Creating proxied response");
+
     remove_hop_headers(response.headers_mut());
     remove_connection_headers(response.headers_mut());
 
@@ -216,6 +231,8 @@ fn create_proxied_response<B>(mut response: Response<B>) -> Response<B> {
 }
 
 fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
+    debug!("Building forward uri");
+
     let split_url = forward_url.split('?').collect::<Vec<&str>>();
 
     let mut base_url: &str = split_url.get(0).unwrap_or(&"");
@@ -236,18 +253,25 @@ fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
         + forward_url_query.len()
         + req.uri().query().map(|e| e.len()).unwrap_or(0);
 
+    debug!("Creating url with capacity to {}", total_length);
+
     let mut url = String::with_capacity(total_length);
 
     url.push_str(base_url);
     url.push_str(path2);
 
     if !forward_url_query.is_empty() || req.uri().query().map(|e| !e.is_empty()).unwrap_or(false) {
+        debug!("Adding query parts to url");
         url.push('?');
         url.push_str(forward_url_query);
 
         if forward_url_query.is_empty() {
+            debug!("Using request query");
+
             url.push_str(req.uri().query().unwrap_or(""));
         } else {
+            debug!("Merging request and forward_url query");
+
             let request_query_items = req.uri().query().unwrap_or("").split('&').map(|el| {
                 let parts = el.split('=').collect::<Vec<&str>>();
                 (parts[0], if parts.len() > 1 { parts[1] } else { "" })
@@ -279,6 +303,8 @@ fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
         }
     }
 
+    debug!("Built forwarding url from request: {}", url);
+
     url.parse().unwrap()
 }
 
@@ -287,6 +313,8 @@ fn create_proxied_request<B>(
     forward_url: &str,
     mut request: Request<B>,
 ) -> Result<Request<B>, ProxyError> {
+    info!("Creating proxied request");
+
     let contains_te_trailers_value = request
         .headers()
         .get(&*TE_HEADER)
@@ -302,6 +330,8 @@ fn create_proxied_request<B>(
 
     let uri: hyper::Uri = forward_uri(forward_url, &request).parse()?;
 
+    debug!("Setting headers of proxied request");
+
     request
         .headers_mut()
         .insert(HOST, HeaderValue::from_str(uri.host().unwrap())?);
@@ -312,12 +342,16 @@ fn create_proxied_request<B>(
     remove_connection_headers(request.headers_mut());
 
     if contains_te_trailers_value {
+        debug!("Setting up trailer headers");
+
         request
             .headers_mut()
             .insert(&*TE_HEADER, HeaderValue::from_static("trailers"));
     }
 
     if let Some(value) = upgrade_type {
+        debug!("Repopulate upgrade headers");
+
         request
             .headers_mut()
             .insert(&*UPGRADE_HEADER, value.parse().unwrap());
@@ -329,10 +363,12 @@ fn create_proxied_request<B>(
     // Add forwarding information in the headers
     match request.headers_mut().entry(&*X_FORWARDED_FOR) {
         hyper::header::Entry::Vacant(entry) => {
+            debug!("X-Fowraded-for header was vacant");
             entry.insert(client_ip.to_string().parse()?);
         }
 
         hyper::header::Entry::Occupied(entry) => {
+            debug!("X-Fowraded-for header was occupied");
             let client_ip_str = client_ip.to_string();
             let mut addr =
                 String::with_capacity(entry.get().as_bytes().len() + 2 + client_ip_str.len());
@@ -344,6 +380,8 @@ fn create_proxied_request<B>(
         }
     }
 
+    debug!("Created proxied request");
+
     Ok(request)
 }
 
@@ -353,10 +391,19 @@ pub async fn call<'a, T: hyper::client::connect::Connect + Clone + Send + Sync +
     request: Request<Body>,
     client: &'a Client<T>,
 ) -> Result<Response<Body>, ProxyError> {
+    info!(
+        "Received proxy call from {} to {}, client: {}",
+        request.uri().to_string(),
+        forward_uri,
+        client_ip
+    );
+
     let proxied_request = create_proxied_request(client_ip, forward_uri, request)?;
 
     let response = client.request(proxied_request).await?;
     let proxied_response = create_proxied_response(response);
+
+    debug!("Responding to call with response");
     Ok(proxied_response)
 }
 
