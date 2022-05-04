@@ -38,17 +38,27 @@ struct ProxyTestContext {
 #[test_context(ProxyTestContext)]
 #[tokio::test]
 async fn test_websocket(ctx: &mut ProxyTestContext) {
-    println!("making client connection");
     let (mut client, _) =
         connect_async(Url::parse(&format!("ws://127.0.0.1:{}", ctx.port)).unwrap())
             .await
             .unwrap();
 
-    println!("made client connection");
-    client.send(Message::Ping("ping".into())).await.unwrap();
+    client.send(Message::Ping("hello".into())).await.unwrap();
     let msg = client.next().await.unwrap().unwrap();
 
-    assert!(matches!(msg, Message::Pong(inner) if inner == "pong".as_bytes()));
+    assert!(
+        matches!(&msg, Message::Pong(inner) if inner == "hello".as_bytes()),
+        "did not get pong, but {:?}",
+        msg
+    );
+
+    let msg = client.next().await.unwrap().unwrap();
+
+    assert!(
+        matches!(&msg, Message::Text(inner) if inner == "All done"),
+        "did not get text, but {:?}",
+        msg
+    );
 }
 
 async fn handle(
@@ -84,16 +94,21 @@ impl<'a> AsyncTestContext for ProxyTestContext {
         let ws_handler = tokio::spawn(async move {
             let ws_server = TcpListener::bind(("127.0.0.1", ws_port)).await.unwrap();
 
-            while let Ok((stream, addr)) = ws_server.accept().await {
-                println!("incoming connection: {addr}");
+            if let Ok((stream, _)) = ws_server.accept().await {
                 let mut websocket = accept_async(stream).await.unwrap();
 
                 let msg = websocket.next().await.unwrap().unwrap();
-                assert!(matches!(msg, Message::Ping(inner) if inner == "ping".as_bytes()));
-                println!("past ping");
+                assert!(
+                    matches!(&msg, Message::Ping(inner) if inner == "hello".as_bytes()),
+                    "did not get ping, but: {:?}",
+                    msg
+                );
+                // Tungstenite will auto send a Pong as a response to a Ping
 
-                websocket.send(Message::Pong("pong".into())).await.unwrap();
-                println!("past pong");
+                websocket
+                    .send(Message::Text("All done".to_string()))
+                    .await
+                    .unwrap();
             }
         });
 

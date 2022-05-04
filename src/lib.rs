@@ -119,9 +119,11 @@ extern crate test;
 use hyper::header::{HeaderMap, HeaderName, HeaderValue, HOST};
 use hyper::http::header::{InvalidHeaderValue, ToStrError};
 use hyper::http::uri::InvalidUri;
-use hyper::{Body, Client, Error, Request, Response};
+use hyper::upgrade::OnUpgrade;
+use hyper::{upgrade, Body, Client, Error, Request, Response, StatusCode};
 use lazy_static::lazy_static;
 use std::net::IpAddr;
+use tokio::io::copy_bidirectional;
 
 lazy_static! {
     static ref TE_HEADER: HeaderName = HeaderName::from_static("te");
@@ -397,11 +399,40 @@ pub async fn call<'a, T: hyper::client::connect::Connect + Clone + Send + Sync +
         forward_uri,
         client_ip
     );
+    let mut request = request;
+
+    let request_upgraded = request.extensions_mut().remove::<OnUpgrade>();
 
     let proxied_request = create_proxied_request(client_ip, forward_uri, request)?;
 
-    let response = client.request(proxied_request).await?;
-    let proxied_response = create_proxied_response(response);
+    let proxied_response = client.request(proxied_request).await?;
+
+    if proxied_response.status() == StatusCode::SWITCHING_PROTOCOLS {
+        // if response.status() != proxied_request.st
+
+        let mut response = Response::new(Body::empty());
+        *response.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
+
+        for (k, v) in proxied_response.headers().into_iter() {
+            response.headers_mut().append(k, v.clone());
+        }
+
+        let mut response_upgraded = upgrade::on(proxied_response)
+            .await
+            .expect("failed to upgrade response");
+
+        tokio::spawn(async move {
+            let mut request_upgraded = request_upgraded
+                .expect("test")
+                .await
+                .expect("failed to upgrade request");
+
+            copy_bidirectional(&mut response_upgraded, &mut request_upgraded).await;
+        });
+
+        return Ok(response);
+    }
+    let proxied_response = create_proxied_response(proxied_response);
 
     debug!("Responding to call with response");
     Ok(proxied_response)
