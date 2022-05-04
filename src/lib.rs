@@ -192,7 +192,7 @@ fn get_upgrade_type(headers: &HeaderMap) -> Option<String> {
                 .to_str()
                 .unwrap()
                 .split(',')
-                .any(|e| e.to_lowercase() == "upgrade")
+                .any(|e| e.trim().to_lowercase() == "upgrade")
         })
         .unwrap_or(false)
     {
