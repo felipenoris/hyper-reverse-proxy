@@ -412,6 +412,8 @@ pub async fn call<'a, T: hyper::client::connect::Connect + Clone + Send + Sync +
             .expect("response does not have an upgrade extension")
             .await?;
 
+        debug!("Responding to a connection upgrade response");
+
         tokio::spawn(async move {
             let mut request_upgraded = request_upgraded
                 .expect("request does not have an upgrade extension")
@@ -423,13 +425,13 @@ pub async fn call<'a, T: hyper::client::connect::Connect + Clone + Send + Sync +
                 .expect("coping between upgraded connections failed");
         });
 
-        return Ok(response);
+        Ok(response)
+    } else {
+        let proxied_response = create_proxied_response(response);
+
+        debug!("Responding to call with response");
+        Ok(proxied_response)
     }
-
-    let proxied_response = create_proxied_response(response);
-
-    debug!("Responding to call with response");
-    Ok(proxied_response)
 }
 
 pub struct ReverseProxy<T: hyper::client::connect::Connect + Clone + Send + Sync + 'static> {
