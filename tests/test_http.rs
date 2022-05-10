@@ -51,7 +51,7 @@ async fn test_get_error_500(ctx: &mut ProxyTestContext) {
 #[tokio::test]
 async fn test_upgrade_mismatch(ctx: &mut ProxyTestContext) {
     ctx.http_back.add(
-        HandlerBuilder::new("/normal")
+        HandlerBuilder::new("/ws")
             .status_code(StatusCode::SWITCHING_PROTOCOLS)
             .build(),
     );
@@ -61,7 +61,7 @@ async fn test_upgrade_mismatch(ctx: &mut ProxyTestContext) {
                 .header(CONNECTION, "Upgrade")
                 .header(UPGRADE, "websocket")
                 .method("GET")
-                .uri(ctx.uri("/normal"))
+                .uri(ctx.uri("/ws"))
                 .body(Body::from(""))
                 .unwrap(),
         )
@@ -74,20 +74,11 @@ async fn test_upgrade_mismatch(ctx: &mut ProxyTestContext) {
 #[tokio::test]
 async fn test_upgrade_unrequested(ctx: &mut ProxyTestContext) {
     ctx.http_back.add(
-        HandlerBuilder::new("/normal")
+        HandlerBuilder::new("/wrong_switch")
             .status_code(StatusCode::SWITCHING_PROTOCOLS)
             .build(),
     );
-    let resp = Client::new()
-        .request(
-            Request::builder()
-                .method("GET")
-                .uri(ctx.uri("/normal"))
-                .body(Body::from(""))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let resp = Client::new().get(ctx.uri("/wrong_switch")).await.unwrap();
     assert_eq!(resp.status(), 502);
 }
 
