@@ -1,5 +1,6 @@
 use hyper::client::connect::dns::GaiResolver;
 use hyper::client::HttpConnector;
+use hyper::header::{CONNECTION, UPGRADE};
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Client, Request, Response, Server, StatusCode, Uri};
@@ -44,6 +45,50 @@ async fn test_get_error_500(ctx: &mut ProxyTestContext) {
         .await
         .unwrap();
     assert_eq!(500, resp.status());
+}
+
+#[test_context(ProxyTestContext)]
+#[tokio::test]
+async fn test_upgrade_mismatch(ctx: &mut ProxyTestContext) {
+    ctx.http_back.add(
+        HandlerBuilder::new("/normal")
+            .status_code(StatusCode::SWITCHING_PROTOCOLS)
+            .build(),
+    );
+    let resp = Client::new()
+        .request(
+            Request::builder()
+                .header(CONNECTION, "Upgrade")
+                .header(UPGRADE, "websocket")
+                .method("GET")
+                .uri(ctx.uri("/normal"))
+                .body(Body::from(""))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 502);
+}
+
+#[test_context(ProxyTestContext)]
+#[tokio::test]
+async fn test_upgrade_unrequested(ctx: &mut ProxyTestContext) {
+    ctx.http_back.add(
+        HandlerBuilder::new("/normal")
+            .status_code(StatusCode::SWITCHING_PROTOCOLS)
+            .build(),
+    );
+    let resp = Client::new()
+        .request(
+            Request::builder()
+                .method("GET")
+                .uri(ctx.uri("/normal"))
+                .body(Body::from(""))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 502);
 }
 
 #[test_context(ProxyTestContext)]
