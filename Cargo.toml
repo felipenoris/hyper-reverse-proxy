@@ -18,6 +18,10 @@ edition = "2018"
 
 include = ["Cargo.toml", "LICENSE", "src/**/*"]
 
+[[bench]]
+name="internal"
+harness = false
+
 [dependencies]
 hyper = { version = "0.14.18", features = ["client"] }
 lazy_static = "1.4.0"
@@ -41,3 +45,8 @@ hyper-trust-dns = { version = "0.4.2", features = [
 rand = "0.8.5"
 tungstenite = "0.17"
 url = "2.2"
+criterion = "0.3.5"
+
+[features]
+
+__bench=[]

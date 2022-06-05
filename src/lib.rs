@@ -108,13 +108,8 @@
 //! }
 //!
 //! ```
-#![cfg_attr(all(not(stable), test), feature(test))]
-
 #[macro_use]
 extern crate tracing;
-
-#[cfg(all(not(stable), test))]
-extern crate test;
 
 use hyper::header::{HeaderMap, HeaderName, HeaderValue, HOST};
 use hyper::http::header::{InvalidHeaderValue, ToStrError};
@@ -129,15 +124,17 @@ lazy_static! {
     static ref TE_HEADER: HeaderName = HeaderName::from_static("te");
     static ref CONNECTION_HEADER: HeaderName = HeaderName::from_static("connection");
     static ref UPGRADE_HEADER: HeaderName = HeaderName::from_static("upgrade");
+    static ref TRAILER_HEADER: HeaderName = HeaderName::from_static("trailer");
+    static ref TRAILERS_HEADER: HeaderName = HeaderName::from_static("trailers");
     // A list of the headers, using hypers actual HeaderName comparison
     static ref HOP_HEADERS: [HeaderName; 9] = [
         CONNECTION_HEADER.clone(),
         TE_HEADER.clone(),
+        TRAILER_HEADER.clone(),
         HeaderName::from_static("keep-alive"),
         HeaderName::from_static("proxy-connection"),
         HeaderName::from_static("proxy-authenticate"),
         HeaderName::from_static("proxy-authorization"),
-        HeaderName::from_static("trailer"),
         HeaderName::from_static("transfer-encoding"),
         HeaderName::from_static("upgrade"),
     ];
@@ -186,6 +183,7 @@ fn remove_hop_headers(headers: &mut HeaderMap) {
 }
 
 fn get_upgrade_type(headers: &HeaderMap) -> Option<String> {
+    #[allow(clippy::blocks_in_if_conditions)]
     if headers
         .get(&*CONNECTION_HEADER)
         .map(|value| {
@@ -193,7 +191,7 @@ fn get_upgrade_type(headers: &HeaderMap) -> Option<String> {
                 .to_str()
                 .unwrap()
                 .split(',')
-                .any(|e| e.trim().to_lowercase() == "upgrade")
+                .any(|e| e.trim() == *UPGRADE_HEADER)
         })
         .unwrap_or(false)
     {
@@ -327,7 +325,7 @@ fn create_proxied_request<B>(
                 .to_str()
                 .unwrap()
                 .split(',')
-                .any(|e| e.to_lowercase() == "trailers")
+                .any(|e| e.trim() == *TRAILERS_HEADER)
         })
         .unwrap_or(false);
 
@@ -473,191 +471,26 @@ impl<T: hyper::client::connect::Connect + Clone + Send + Sync + 'static> Reverse
     }
 }
 
-#[cfg(all(not(stable), test))]
-mod tests {
-    use hyper::header::HeaderName;
-    use hyper::{Client, Uri};
-    use hyper::{HeaderMap, Request, Response};
-    use rand::distributions::Alphanumeric;
-    use rand::prelude::*;
-    use std::net::Ipv4Addr;
-    use std::str::FromStr;
-    use test::Bencher;
-    use test_context::AsyncTestContext;
-    use tokiotest_httpserver::HttpTestContext;
-
-    fn generate_string() -> String {
-        let take = rand::thread_rng().gen::<u8>().into();
-        rand::thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(take)
-            .map(char::from)
-            .collect()
+#[cfg(feature = "__bench")]
+pub mod benches {
+    pub fn hop_headers() -> &'static [crate::HeaderName] {
+        &*super::HOP_HEADERS
     }
 
-    fn build_headers() -> HeaderMap {
-        let mut headers_map: HeaderMap = (&*super::HOP_HEADERS)
-            .iter()
-            .map(|el: &'static HeaderName| (el.clone(), generate_string().parse().unwrap()))
-            .collect();
-
-        for _i in 0..20 {
-            'inserted: loop {
-                if let Ok(value) =
-                    hyper::header::HeaderName::from_str(&generate_string().to_lowercase())
-                {
-                    headers_map.insert(value, generate_string().parse().unwrap());
-
-                    break 'inserted;
-                }
-            }
-        }
-
-        headers_map
+    pub fn create_proxied_response<T>(response: crate::Response<T>) {
+        super::create_proxied_response(response);
     }
 
-    #[bench]
-    fn proxy_call(b: &mut Bencher) {
-        use tokio::runtime::Runtime;
-        let rt = Runtime::new().unwrap();
-
-        let uri = Uri::from_static("http://0.0.0.0:8080/me?hello=world");
-
-        let http_context: HttpTestContext = rt.block_on(async { AsyncTestContext::setup().await });
-
-        let forward_url = &format!("http://0.0.0.0:{}", http_context.port);
-
-        let headers_map = build_headers();
-
-        let client_ip = std::net::IpAddr::from(Ipv4Addr::from_str("0.0.0.0").unwrap());
-
-        let client = Client::new();
-
-        b.iter(|| {
-            rt.block_on(async {
-                let mut request = Request::builder().uri(uri.clone());
-
-                *request.headers_mut().unwrap() = headers_map.clone();
-
-                super::call(
-                    client_ip,
-                    forward_url,
-                    request.body(hyper::Body::from("")).unwrap(),
-                    &client,
-                )
-                .await
-                .unwrap();
-            })
-        });
+    pub fn forward_uri<B>(forward_url: &str, req: &crate::Request<B>) {
+        super::forward_uri(forward_url, req);
     }
 
-    #[bench]
-    fn create_proxied_response(b: &mut Bencher) {
-        let headers_map = build_headers();
-
-        b.iter(|| {
-            let mut response = Response::builder().status(200);
-
-            *response.headers_mut().unwrap() = headers_map.clone();
-
-            super::create_proxied_response(response.body(()).unwrap());
-        });
-    }
-
-    #[bench]
-    fn forward_url_with_str_ending_slash(b: &mut Bencher) {
-        let uri = Uri::from_static("http://0.0.0.0:8080/me");
-        let port = rand::thread_rng().gen::<u8>();
-        let forward_url = &format!("http://0.0.0.0:{}/", port);
-
-        b.iter(|| {
-            let request = Request::builder().uri(uri.clone()).body(());
-
-            super::forward_uri(forward_url, &request.unwrap());
-        });
-    }
-
-    #[bench]
-    fn forward_url_with_str_ending_slash_and_query(b: &mut Bencher) {
-        let uri = Uri::from_static("http://0.0.0.0:8080/me?hello=world");
-        let port = rand::thread_rng().gen::<u8>();
-        let forward_url = &format!("http://0.0.0.0:{}/", port);
-
-        b.iter(|| {
-            let request = Request::builder().uri(uri.clone()).body(());
-
-            super::forward_uri(forward_url, &request.unwrap());
-        });
-    }
-
-    #[bench]
-    fn forward_url_no_ending_slash(b: &mut Bencher) {
-        let uri = Uri::from_static("http://0.0.0.0:8080/me");
-        let port = rand::thread_rng().gen::<u8>();
-        let forward_url = &format!("http://0.0.0.0:{}", port);
-
-        b.iter(|| {
-            let request = Request::builder().uri(uri.clone()).body(());
-
-            super::forward_uri(forward_url, &request.unwrap());
-        });
-    }
-
-    #[bench]
-    fn forward_url_with_query(b: &mut Bencher) {
-        let uri = Uri::from_static("http://0.0.0.0:8080/me?hello=world");
-        let port = rand::thread_rng().gen::<u8>();
-        let forward_url = &format!("http://0.0.0.0:{}", port);
-
-        b.iter(|| {
-            let request = Request::builder().uri(uri.clone()).body(());
-
-            super::forward_uri(forward_url, &request.unwrap());
-        });
-    }
-
-    #[bench]
-    fn create_proxied_request_forwarded_for_occupied(b: &mut Bencher) {
-        let uri = Uri::from_static("http://0.0.0.0:8080/me?hello=world");
-        let port = rand::thread_rng().gen::<u8>();
-        let forward_url = &format!("http://0.0.0.0:{}", port);
-
-        let mut headers_map = build_headers();
-
-        headers_map.insert(
-            HeaderName::from_static("x-forwarded-for"),
-            "0.0.0.0".parse().unwrap(),
-        );
-
-        let client_ip = std::net::IpAddr::from(Ipv4Addr::from_str("0.0.0.0").unwrap());
-
-        b.iter(|| {
-            let mut request = Request::builder().uri(uri.clone());
-
-            *request.headers_mut().unwrap() = headers_map.clone();
-
-            super::create_proxied_request(client_ip, forward_url, request.body(()).unwrap(), None)
-                .unwrap();
-        });
-    }
-
-    #[bench]
-    fn create_proxied_request_forwarded_for_vacant(b: &mut Bencher) {
-        let uri = Uri::from_static("http://0.0.0.0:8080/me?hello=world");
-        let port = rand::thread_rng().gen::<u8>();
-        let forward_url = &format!("http://0.0.0.0:{}", port);
-
-        let headers_map = build_headers();
-
-        let client_ip = std::net::IpAddr::from(Ipv4Addr::from_str("0.0.0.0").unwrap());
-
-        b.iter(|| {
-            let mut request = Request::builder().uri(uri.clone());
-
-            *request.headers_mut().unwrap() = headers_map.clone();
-
-            super::create_proxied_request(client_ip, forward_url, request.body(()).unwrap(), None)
-                .unwrap();
-        });
+    pub fn create_proxied_request<B>(
+        client_ip: crate::IpAddr,
+        forward_url: &str,
+        request: crate::Request<B>,
+        upgrade_type: Option<&String>,
+    ) {
+        super::create_proxied_request(client_ip, forward_url, request, upgrade_type).unwrap();
     }
 }
