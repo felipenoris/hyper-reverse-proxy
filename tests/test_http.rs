@@ -85,9 +85,15 @@ async fn test_upgrade_unrequested(ctx: &mut ProxyTestContext) {
 #[test_context(ProxyTestContext)]
 #[tokio::test]
 async fn test_get(ctx: &mut ProxyTestContext) {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        HOST,
+        format!("127.0.0.1:{}", ctx.http_back.port).parse().unwrap(),
+    );
     ctx.http_back.add(
         HandlerBuilder::new("/foo")
             .status_code(StatusCode::OK)
+            .headers(headers)
             .build(),
     );
     let resp = Client::new().get(ctx.uri("/foo")).await.unwrap();

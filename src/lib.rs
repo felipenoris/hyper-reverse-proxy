@@ -333,9 +333,8 @@ fn create_proxied_request<B>(
 
     debug!("Setting headers of proxied request");
 
-    request
-        .headers_mut()
-        .insert(HOST, HeaderValue::from_str(uri.host().unwrap())?);
+    // remove the original HOST header. It will be set by the client that sends the request: https://github.com/hyperium/hyper/blob/4fcfe1f4ba461209483dec960e36293459a1c60a/src/client/client.rs#L250
+    let original_host = request.headers_mut().remove(HOST);
 
     *request.uri_mut() = uri;
 
