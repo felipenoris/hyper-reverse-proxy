@@ -225,9 +225,8 @@ fn create_proxied_request<B>(
 
     debug!("Setting headers of proxied request");
 
-    request
-        .headers_mut()
-        .insert(HOST, HeaderValue::from_str(uri.host().unwrap())?);
+    // remove the original HOST header. It will be set by the client that sends the request
+    request.headers_mut().remove(HOST);
 
     *request.uri_mut() = uri;
 
