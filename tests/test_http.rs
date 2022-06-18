@@ -1,9 +1,9 @@
 use hyper::client::connect::dns::GaiResolver;
 use hyper::client::HttpConnector;
-use hyper::header::{CONNECTION, UPGRADE};
+use hyper::header::{CONNECTION, HOST, UPGRADE};
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Client, Request, Response, Server, StatusCode, Uri};
+use hyper::{Body, Client, HeaderMap, Request, Response, Server, StatusCode, Uri};
 use hyper_reverse_proxy::ReverseProxy;
 use std::convert::Infallible;
 use std::net::{IpAddr, SocketAddr};
@@ -85,9 +85,15 @@ async fn test_upgrade_unrequested(ctx: &mut ProxyTestContext) {
 #[test_context(ProxyTestContext)]
 #[tokio::test]
 async fn test_get(ctx: &mut ProxyTestContext) {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        HOST,
+        format!("127.0.0.1:{}", ctx.http_back.port).parse().unwrap(),
+    );
     ctx.http_back.add(
         HandlerBuilder::new("/foo")
             .status_code(StatusCode::OK)
+            .headers(headers)
             .build(),
     );
     let resp = Client::new().get(ctx.uri("/foo")).await.unwrap();
