@@ -140,6 +140,7 @@ lazy_static! {
     ];
 
     static ref X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
+    static ref X_FORWARDED_HOST: HeaderName = HeaderName::from_static("x-forwarded-host");
 }
 
 #[derive(Debug)]
@@ -334,7 +335,7 @@ fn create_proxied_request<B>(
     debug!("Setting headers of proxied request");
 
     // remove the original HOST header. It will be set by the client that sends the request
-    request.headers_mut().remove(HOST);
+    let original_host = request.headers_mut().remove(HOST);
 
     *request.uri_mut() = uri;
 
@@ -361,22 +362,27 @@ fn create_proxied_request<B>(
     }
 
     // Add forwarding information in the headers
+    let forwarded_for_value = client_ip.to_string().parse()?;
     match request.headers_mut().entry(&*X_FORWARDED_FOR) {
         hyper::header::Entry::Vacant(entry) => {
-            debug!("X-Fowraded-for header was vacant");
-            entry.insert(client_ip.to_string().parse()?);
+            debug!("x-forwarded-for header was vacant");
+            entry.insert(forwarded_for_value);
         }
+        hyper::header::Entry::Occupied(mut entry) => {
+            debug!("x-forwarded-for header was occupied");
+            entry.append(forwarded_for_value);
+        }
+    }
 
-        hyper::header::Entry::Occupied(entry) => {
-            debug!("X-Fowraded-for header was occupied");
-            let client_ip_str = client_ip.to_string();
-            let mut addr =
-                String::with_capacity(entry.get().as_bytes().len() + 2 + client_ip_str.len());
-
-            addr.push_str(std::str::from_utf8(entry.get().as_bytes()).unwrap());
-            addr.push(',');
-            addr.push(' ');
-            addr.push_str(&client_ip_str);
+    if let Some(host) = original_host {
+        match request.headers_mut().entry(&*X_FORWARDED_HOST) {
+            hyper::header::Entry::Vacant(entry) => {
+                debug!("x-forwarded-host header was vacant");
+                entry.insert(host.to_owned());
+            }
+            hyper::header::Entry::Occupied(mut _entry) => {
+                debug!("x-forwarded-host header was occupied");
+            }
         }
     }
 

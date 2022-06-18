@@ -90,6 +90,27 @@ async fn test_get(ctx: &mut ProxyTestContext) {
         HOST,
         format!("127.0.0.1:{}", ctx.http_back.port).parse().unwrap(),
     );
+
+    ctx.http_back.add(
+        HandlerBuilder::new("/foo")
+            .status_code(StatusCode::OK)
+            .headers(headers)
+            .build(),
+    );
+    let resp = Client::new().get(ctx.uri("/foo")).await.unwrap();
+    assert_eq!(200, resp.status());
+}
+
+#[test_context(ProxyTestContext)]
+#[tokio::test]
+async fn test_headers(ctx: &mut ProxyTestContext) {
+    let mut headers = HeaderMap::new();
+    headers.insert("x-forwarded-for", "127.0.0.1".parse().unwrap());
+    headers.insert(
+        "x-forwarded-host",
+        format!("localhost:{}", ctx.port).parse().unwrap(),
+    );
+
     ctx.http_back.add(
         HandlerBuilder::new("/foo")
             .status_code(StatusCode::OK)
