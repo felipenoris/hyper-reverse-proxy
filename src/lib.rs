@@ -3,7 +3,7 @@
 #[macro_use]
 extern crate tracing;
 
-use hyper::header::{HeaderMap, HeaderName, HeaderValue, HOST};
+use hyper::header::{HeaderMap, HeaderName, HeaderValue};
 use hyper::http::header::{InvalidHeaderValue, ToStrError};
 use hyper::http::uri::InvalidUri;
 use hyper::upgrade::OnUpgrade;
@@ -224,10 +224,6 @@ fn create_proxied_request<B>(
     let uri: hyper::Uri = forward_uri(forward_url, &request).parse()?;
 
     debug!("Setting headers of proxied request");
-
-    request
-        .headers_mut()
-        .insert(HOST, HeaderValue::from_str(uri.host().unwrap())?);
 
     *request.uri_mut() = uri;
 
