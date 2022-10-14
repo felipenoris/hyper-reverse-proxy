@@ -93,7 +93,7 @@ fn get_upgrade_type(headers: &HeaderMap) -> Option<String> {
                 upgrade_value.to_str().unwrap().to_owned()
             );
 
-            return Some(upgrade_value.to_str().unwrap().to_owned());
+            return Some(upgrade_value.to_str().unwrap().to_lowercase().to_owned());
         }
     }
 
