@@ -256,12 +256,12 @@ fn create_proxied_request<B>(
     // Add forwarding information in the headers
     match request.headers_mut().entry(&*X_FORWARDED_FOR) {
         hyper::header::Entry::Vacant(entry) => {
-            debug!("X-Fowraded-for header was vacant");
+            debug!("X-Forwarded-For header was vacant");
             entry.insert(client_ip.to_string().parse()?);
         }
 
         hyper::header::Entry::Occupied(entry) => {
-            debug!("X-Fowraded-for header was occupied");
+            debug!("X-Forwarded-For header was occupied");
             let client_ip_str = client_ip.to_string();
             let mut addr =
                 String::with_capacity(entry.get().as_bytes().len() + 2 + client_ip_str.len());
@@ -300,6 +300,25 @@ pub async fn call<'a, T: hyper::client::connect::Connect + Clone + Send + Sync +
         request,
         request_upgrade_type.as_ref(),
     )?;
+
+    //////////////////////////////////////////////
+    // UNCOMMENT THIS FOR FULL REQUEST LOGGING //
+    ////////////////////////////////////////////
+    /*
+    let (parts, body) = proxied_request.into_parts();
+    debug!(
+        "proxied request = {} {} {:?}",
+        parts.method,
+        parts.uri,
+        parts.headers
+    );
+    let bytes = hyper::body::to_bytes(body).await.expect("could not get body data");
+    if let Ok(body) = std::str::from_utf8(&bytes) {
+        debug!("proxied request body = {:?}", body);
+        //std::fs::write("./request_body.xml", body).expect("Unable to write file");
+    }
+    let proxied_request = Request::from_parts(parts, Body::from(bytes));
+    */
     let mut response = client.request(proxied_request).await?;
 
     if response.status() == StatusCode::SWITCHING_PROTOCOLS {

@@ -23,7 +23,7 @@ name="internal"
 harness = false
 
 [dependencies]
-hyper = { version = "0.14.18", features = ["client"] }
+hyper = { version = "0.14.20", features = ["client"] }
 lazy_static = "1.4.0"
 tokio = { version = "1.17.0", features = ["io-util", "rt"] }
 tracing = "0.1.34"
