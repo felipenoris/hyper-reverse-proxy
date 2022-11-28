@@ -93,7 +93,7 @@ fn get_upgrade_type(headers: &HeaderMap) -> Option<String> {
                 upgrade_value.to_str().unwrap().to_owned()
             );
 
-            return Some(upgrade_value.to_str().unwrap().to_owned());
+            return Some(upgrade_value.to_str().unwrap().to_lowercase());
         }
     }
 
@@ -128,7 +128,7 @@ fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
 
     let split_url = forward_url.split('?').collect::<Vec<&str>>();
 
-    let mut base_url: &str = split_url.get(0).unwrap_or(&"");
+    let mut base_url: &str = split_url.first().unwrap_or(&"");
     let forward_url_query: &str = split_url.get(1).unwrap_or(&"");
 
     let path2 = req.uri().path();
@@ -256,12 +256,12 @@ fn create_proxied_request<B>(
     // Add forwarding information in the headers
     match request.headers_mut().entry(&*X_FORWARDED_FOR) {
         hyper::header::Entry::Vacant(entry) => {
-            debug!("X-Fowraded-for header was vacant");
+            debug!("X-Forwarded-For header was vacant");
             entry.insert(client_ip.to_string().parse()?);
         }
 
         hyper::header::Entry::Occupied(entry) => {
-            debug!("X-Fowraded-for header was occupied");
+            debug!("X-Forwarded-For header was occupied");
             let client_ip_str = client_ip.to_string();
             let mut addr =
                 String::with_capacity(entry.get().as_bytes().len() + 2 + client_ip_str.len());
@@ -300,6 +300,25 @@ pub async fn call<'a, T: hyper::client::connect::Connect + Clone + Send + Sync +
         request,
         request_upgrade_type.as_ref(),
     )?;
+
+    //////////////////////////////////////////////
+    // UNCOMMENT THIS FOR FULL REQUEST LOGGING //
+    ////////////////////////////////////////////
+    /*
+    let (parts, body) = proxied_request.into_parts();
+    debug!(
+        "proxied request = {} {} {:?}",
+        parts.method,
+        parts.uri,
+        parts.headers
+    );
+    let bytes = hyper::body::to_bytes(body).await.expect("could not get body data");
+    if let Ok(body) = std::str::from_utf8(&bytes) {
+        debug!("proxied request body = {:?}", body);
+        //std::fs::write("./request_body.xml", body).expect("Unable to write file");
+    }
+    let proxied_request = Request::from_parts(parts, Body::from(bytes));
+    */
     let mut response = client.request(proxied_request).await?;
 
     if response.status() == StatusCode::SWITCHING_PROTOCOLS {
@@ -319,9 +338,10 @@ pub async fn call<'a, T: hyper::client::connect::Connect + Clone + Send + Sync +
                     let mut request_upgraded =
                         request_upgraded.await.expect("failed to upgrade request");
 
-                    copy_bidirectional(&mut response_upgraded, &mut request_upgraded)
-                        .await
-                        .expect("coping between upgraded connections failed");
+                    match copy_bidirectional(&mut response_upgraded, &mut request_upgraded).await {
+                        Ok(_) => debug!("successfull copy between upgraded connections"),
+                        Err(_) => error!("failed copy between upgraded connections (EOF)"),
+                    }
                 });
 
                 Ok(response)
