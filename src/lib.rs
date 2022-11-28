@@ -93,7 +93,7 @@ fn get_upgrade_type(headers: &HeaderMap) -> Option<String> {
                 upgrade_value.to_str().unwrap().to_owned()
             );
 
-            return Some(upgrade_value.to_str().unwrap().to_lowercase().to_owned());
+            return Some(upgrade_value.to_str().unwrap().to_lowercase());
         }
     }
 
@@ -128,7 +128,7 @@ fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
 
     let split_url = forward_url.split('?').collect::<Vec<&str>>();
 
-    let mut base_url: &str = split_url.get(0).unwrap_or(&"");
+    let mut base_url: &str = split_url.first().unwrap_or(&"");
     let forward_url_query: &str = split_url.get(1).unwrap_or(&"");
 
     let path2 = req.uri().path();
@@ -338,9 +338,10 @@ pub async fn call<'a, T: hyper::client::connect::Connect + Clone + Send + Sync +
                     let mut request_upgraded =
                         request_upgraded.await.expect("failed to upgrade request");
 
-                    copy_bidirectional(&mut response_upgraded, &mut request_upgraded)
-                        .await
-                        .expect("coping between upgraded connections failed");
+                    match copy_bidirectional(&mut response_upgraded, &mut request_upgraded).await {
+                        Ok(_) => debug!("successfull copy between upgraded connections"),
+                        Err(_) => error!("failed copy between upgraded connections (EOF)"),
+                    }
                 });
 
                 Ok(response)
