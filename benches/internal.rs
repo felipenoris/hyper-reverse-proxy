@@ -4,7 +4,6 @@ use hyper::client::HttpConnector;
 use hyper::header::HeaderName;
 use hyper::Uri;
 use hyper::{HeaderMap, Request, Response};
-use hyper_reverse_proxy::benches as internal_benches;
 use hyper_reverse_proxy::ReverseProxy;
 use rand::distributions::Alphanumeric;
 use rand::prelude::*;
@@ -31,7 +30,7 @@ fn create_proxied_response(b: &mut Criterion) {
 
             *response.headers_mut().unwrap() = headers_map.clone();
 
-            internal_benches::create_proxied_response(black_box(response.body(()).unwrap()));
+            hyper_reverse_proxy::create_proxied_response(black_box(response.body(()).unwrap()));
         })
     });
 }
@@ -46,7 +45,7 @@ fn generate_string() -> String {
 }
 
 fn build_headers() -> HeaderMap {
-    let mut headers_map: HeaderMap = (&*internal_benches::hop_headers())
+    let mut headers_map: HeaderMap = (&hyper_reverse_proxy::HOP_HEADERS)
         .iter()
         .map(|el: &'static HeaderName| (el.clone(), generate_string().parse().unwrap()))
         .collect();
@@ -108,7 +107,7 @@ fn forward_url_with_str_ending_slash(b: &mut Criterion) {
         b.iter(|| {
             let request = Request::builder().uri(uri.clone()).body(());
 
-            internal_benches::forward_uri(forward_url, &request.unwrap());
+            hyper_reverse_proxy::forward_uri(forward_url, &request.unwrap());
         })
     });
 }
@@ -122,7 +121,7 @@ fn forward_url_with_str_ending_slash_and_query(b: &mut Criterion) {
         t.iter(|| {
             let request = Request::builder().uri(uri.clone()).body(());
 
-            internal_benches::forward_uri(forward_url, &request.unwrap());
+            hyper_reverse_proxy::forward_uri(forward_url, &request.unwrap());
         })
     });
 }
@@ -136,7 +135,7 @@ fn forward_url_no_ending_slash(b: &mut Criterion) {
         t.iter(|| {
             let request = Request::builder().uri(uri.clone()).body(());
 
-            internal_benches::forward_uri(forward_url, &request.unwrap());
+            hyper_reverse_proxy::forward_uri(forward_url, &request.unwrap());
         })
     });
 }
@@ -150,7 +149,7 @@ fn forward_url_with_query(b: &mut Criterion) {
         t.iter(|| {
             let request = Request::builder().uri(uri.clone()).body(());
 
-            internal_benches::forward_uri(forward_url, &request.unwrap());
+            hyper_reverse_proxy::forward_uri(forward_url, &request.unwrap());
         })
     });
 }
@@ -175,12 +174,13 @@ fn create_proxied_request_forwarded_for_occupied(b: &mut Criterion) {
 
             *request.headers_mut().unwrap() = headers_map.clone();
 
-            internal_benches::create_proxied_request(
+            hyper_reverse_proxy::create_proxied_request(
                 client_ip,
                 forward_url,
                 request.body(()).unwrap(),
                 None,
-            );
+            )
+            .unwrap();
         })
     });
 }
@@ -200,12 +200,13 @@ fn create_proxied_request_forwarded_for_vacant(b: &mut Criterion) {
 
             *request.headers_mut().unwrap() = headers_map.clone();
 
-            internal_benches::create_proxied_request(
+            hyper_reverse_proxy::create_proxied_request(
                 client_ip,
                 forward_url,
                 request.body(()).unwrap(),
                 None,
-            );
+            )
+            .unwrap();
         })
     });
 }
