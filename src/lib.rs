@@ -9,6 +9,8 @@ use hyper::http::uri::InvalidUri;
 use hyper::upgrade::OnUpgrade;
 use hyper::{Body, Client, Error, Request, Response, StatusCode};
 use lazy_static::lazy_static;
+use std::error::Error as StdError;
+use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::net::IpAddr;
 use tokio::io::copy_bidirectional;
 
@@ -40,6 +42,28 @@ pub enum ProxyError {
     HyperError(Error),
     ForwardHeaderError,
     UpgradeError(String),
+}
+
+impl Display for ProxyError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            ProxyError::InvalidUri(err) => write!(f, "InvalidUri: {err}"),
+            ProxyError::HyperError(err) => write!(f, "HyperError: {err}"),
+            ProxyError::ForwardHeaderError => write!(f, "ForwardHeaderError"),
+            ProxyError::UpgradeError(err) => write!(f, "UpgradeError: {err}"),
+        }
+    }
+}
+
+impl StdError for ProxyError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        match self {
+            ProxyError::InvalidUri(err) => err.source(),
+            ProxyError::HyperError(err) => err.source(),
+            ProxyError::ForwardHeaderError => None,
+            ProxyError::UpgradeError(..) => None,
+        }
+    }
 }
 
 impl From<Error> for ProxyError {
